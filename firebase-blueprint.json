@@ -1,0 +1,67 @@
+{
+  "entities": {
+    "Teacher": {
+      "title": "Teacher",
+      "description": "Schema representasi data Guru Agama Islam SMP di Kabupaten Subang",
+      "type": "object",
+      "properties": {
+        "nama": { "type": "string", "description": "Nama Lengkap beserta Gelar" },
+        "nip": { "type": "string", "description": "Nomor Induk Pegawai (jika ada)" },
+        "nuptk": { "type": "string", "description": "Nomor Unik Pendidik dan Tenaga Kependidikan" },
+        "status": { "type": "string", "enum": ["PNS", "PPPK", "Non ASN"] },
+        "komisariat": { "type": "string", "enum": ["jalancagak", "subang", "kalijati", "pagaden", "pamanukan", "ciasem"] },
+        "sekolah": { "type": "string", "description": "Nama Sekolah Tempat Bertugas" },
+        "whatsapp": { "type": "string", "description": "Nomor Kontak WhatsApp Aktif" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["nama", "status", "komisariat", "sekolah"]
+    },
+    "News": {
+      "title": "News",
+      "description": "Schema artikel berita kegiatan atau pengumuman MGMP PAI",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string", "description": "Judul Artikel Berita" },
+        "category": { "type": "string", "description": "Kategori Berita (REGULASI, AGENDA, EDUKASI, KESISWAAN)" },
+        "date": { "type": "string", "description": "Tanggal Publikasi Berformat Bahasa Indonesia" },
+        "image": { "type": "string", "description": "URL gambar ilustrasi artikel" },
+        "summary": { "type": "string", "description": "Ringkasan Singkat Berita" },
+        "content": { "type": "string", "description": "Konten lengkap artikel berita" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["title", "category", "date", "image", "summary", "content"]
+    },
+    "Article": {
+      "title": "Article",
+      "description": "Schema representasi data artikel atau nasihat dari guru-guru PAI",
+      "type": "object",
+      "properties": {
+        "nama": { "type": "string", "description": "Nama Guru Penulis" },
+        "asalSekolah": { "type": "string", "description": "Nama Sekolah Asal Guru" },
+        "tanggalPenulisan": { "type": "string", "description": "Tanggal Penulisan Artikel" },
+        "judul": { "type": "string", "description": "Judul Artikel/Nasihat" },
+        "isi": { "type": "string", "description": "Isi lengkap artikel atau nasihat" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["nama", "asalSekolah", "tanggalPenulisan", "judul", "isi"]
+    }
+  },
+  "firestore": {
+    "/siladik-guru-pai-smp/{teacherId}": {
+      "schema": "Teacher",
+      "description": "Koleksi data guru untuk statistik kepegawaian internal SILADIK"
+    },
+    "/teachers/{teacherId}": {
+      "schema": "Teacher",
+      "description": "Koleksi data guru utama terhubung secara langsung sesuai spesifikasi"
+    },
+    "/news/{newsId}": {
+      "schema": "News",
+      "description": "Koleksi pengumuman, berita, dan rilis edukasi dari Admin MGMP PAI"
+    },
+    "/articles/{articleId}": {
+      "schema": "Article",
+      "description": "Koleksi tulisan artikel dan berbagi nasihat dari guru-guru PAI SMP"
+    }
+  }
+}

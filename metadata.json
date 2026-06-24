@@ -1,0 +1,6 @@
+{
+  "name": "MGMP PAI SMP Kabupaten Subang",
+  "description": "Portal Resmi Musyawarah Guru Mata Pelajaran Pendidikan Agama Islam Sekolah Menengah Pertama (MGMP PAI SMP) Kabupaten Subang, Jawa Barat.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
