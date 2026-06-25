@@ -51,6 +51,7 @@ import {
   X, 
   CheckCircle, 
   Database,
+  Megaphone,
   Building2,
   FileCheck2,
   Info,
@@ -129,7 +130,7 @@ export default function AdminTab({ onLogout }: AdminTabProps = {}) {
   const [aiLogs, setAiLogs] = useState<any[]>([]);
   
   // Navigation inside Admin Panel
-  const [adminSubTab, setAdminSubTab] = useState<"dashboard" | "berita" | "guru" | "api_monitoring" | "profil_mgmp" | "kelola_apk">("dashboard");
+  const [adminSubTab, setAdminSubTab] = useState<"dashboard" | "berita" | "guru" | "api_monitoring" | "profil_mgmp" | "kelola_apk" | "integrasi_firebase" | "kelola_pemberitahuan">("dashboard");
 
   // Search/Filter Search Input States
   const [searchTeacherQuery, setSearchTeacherQuery] = useState("");
@@ -259,6 +260,84 @@ export default function AdminTab({ onLogout }: AdminTabProps = {}) {
   const [apkFilenameInput, setApkFilenameInput] = useState(() => localStorage.getItem("apk_filename") || "mgmp-pai-subang-v12.apk");
   const [apkSizeInput, setApkSizeInput] = useState(() => localStorage.getItem("apk_size") || "24.8 MB");
   const [apkDataInput, setApkDataInput] = useState(() => localStorage.getItem("apk_data") || "");
+
+  // Firebase configuration management states
+  const [firebaseApiKey, setFirebaseApiKey] = useState(() => {
+    try {
+      const saved = localStorage.getItem("custom_firebase_config");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        return parsed.apiKey || "AIzaSyCp4sLgQ00xWa3BBvFRJs1AEnD1EytNUQc";
+      }
+    } catch (e) {}
+    return "AIzaSyCp4sLgQ00xWa3BBvFRJs1AEnD1EytNUQc";
+  });
+
+  const [firebaseProjectId, setFirebaseProjectId] = useState(() => {
+    try {
+      const saved = localStorage.getItem("custom_firebase_config");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        return parsed.projectId || "promising-card-0pnh2";
+      }
+    } catch (e) {}
+    return "promising-card-0pnh2";
+  });
+
+  const [firebaseAppId, setFirebaseAppId] = useState(() => {
+    try {
+      const saved = localStorage.getItem("custom_firebase_config");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        return parsed.appId || "1:827904139612:web:8da7d60f6e994022a16199";
+      }
+    } catch (e) {}
+    return "1:827904139612:web:8da7d60f6e994022a16199";
+  });
+
+  const [firebaseDbId, setFirebaseDbId] = useState(() => {
+    return localStorage.getItem("custom_firebase_db_id") || "ai-studio-52c3b800-b7a1-459e-af6e-315e9ae0eb3a";
+  });
+
+  const [firebaseAuthDomain, setFirebaseAuthDomain] = useState(() => {
+    try {
+      const saved = localStorage.getItem("custom_firebase_config");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        return parsed.authDomain || "promising-card-0pnh2.firebaseapp.com";
+      }
+    } catch (e) {}
+    return "promising-card-0pnh2.firebaseapp.com";
+  });
+
+  const [firebaseStorageBucket, setFirebaseStorageBucket] = useState(() => {
+    try {
+      const saved = localStorage.getItem("custom_firebase_config");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        return parsed.storageBucket || "promising-card-0pnh2.firebasestorage.app";
+      }
+    } catch (e) {}
+    return "promising-card-0pnh2.firebasestorage.app";
+  });
+
+  const [firebaseMessagingSenderId, setFirebaseMessagingSenderId] = useState(() => {
+    try {
+      const saved = localStorage.getItem("custom_firebase_config");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        return parsed.messagingSenderId || "827904139612";
+      }
+    } catch (e) {}
+    return "827904139612";
+  });
+
+  // Dynamic global announcement admin states
+  const [announcementText, setAnnouncementText] = useState("Segera Install Aplikasi Android Resmi Portal MGMP PAI SMP Subang! Klik di sini untuk panduan instalasi & unduh.");
+  const [announcementBadgeText, setAnnouncementBadgeText] = useState("INFO PENTING");
+  const [announcementActionType, setAnnouncementActionType] = useState<"apk" | "link" | "none">("apk");
+  const [announcementActionUrl, setAnnouncementActionUrl] = useState("");
+  const [announcementBlinking, setAnnouncementBlinking] = useState(true);
 
   // Admin page layout view modes for the profile sub-tab
   const [activeProfileSubTab, setActiveProfileSubTab] = useState<"visimisi" | "tujuan" | "struktur">("visimisi");
@@ -480,12 +559,25 @@ export default function AdminTab({ onLogout }: AdminTabProps = {}) {
       }
     });
 
+    // 6. Subscribe to Global Announcement settings doc
+    const unsubAnnouncement = onSnapshot(doc(db, "settings", "announcement"), (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        if (data.text !== undefined) setAnnouncementText(data.text);
+        if (data.badgeText !== undefined) setAnnouncementBadgeText(data.badgeText);
+        if (data.actionType !== undefined) setAnnouncementActionType(data.actionType);
+        if (data.actionUrl !== undefined) setAnnouncementActionUrl(data.actionUrl);
+        if (data.blinking !== undefined) setAnnouncementBlinking(data.blinking);
+      }
+    });
+
     return () => {
       unsubTeachers();
       unsubNews();
       unsubInteractions();
       unsubProfile();
       unsubApk();
+      unsubAnnouncement();
     };
   }, [user, isSimulated]);
 
@@ -1060,6 +1152,30 @@ export default function AdminTab({ onLogout }: AdminTabProps = {}) {
           >
             <Smartphone className="w-4 h-4 text-[#009640]" />
             d. Kelola Aplikasi APK
+          </button>
+
+          <button
+            onClick={() => setAdminSubTab("integrasi_firebase")}
+            className={`flex items-center gap-2 px-4 py-2 rounded-2xl text-xs font-bold transition-all cursor-pointer ${
+              adminSubTab === "integrasi_firebase"
+                ? "bg-emerald-800 text-white shadow-md font-black"
+                : "bg-white text-slate-600 border border-slate-200/70 hover:bg-slate-50"
+            }`}
+          >
+            <Database className="w-4 h-4 text-amber-500" />
+            e. Integrasi Firebase
+          </button>
+
+          <button
+            onClick={() => setAdminSubTab("kelola_pemberitahuan")}
+            className={`flex items-center gap-2 px-4 py-2 rounded-2xl text-xs font-bold transition-all cursor-pointer ${
+              adminSubTab === "kelola_pemberitahuan"
+                ? "bg-emerald-800 text-white shadow-md font-black"
+                : "bg-white text-slate-600 border border-slate-200/70 hover:bg-slate-50"
+            }`}
+          >
+            <Megaphone className="w-4 h-4 text-rose-500" />
+            f. Kelola Pemberitahuan PENTING
           </button>
 
           <button
@@ -2092,6 +2208,333 @@ export default function AdminTab({ onLogout }: AdminTabProps = {}) {
                 <div className="p-3 bg-blue-50 border border-blue-100 rounded-xl space-y-1 text-[10px] leading-relaxed text-blue-700">
                   <span className="font-bold block text-[11px]">ℹ️ Info Sinkronisasi</span>
                   <p className="font-semibold">Semua perubahan data APK yang Anda simpan di sini akan disimpan dalam storage sistem dan secara dinamis ditarik oleh komponen Unduh APK halaman depan (tanpa perlu mendeploy ulang aplikasi!).</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* SUB TAB 6: KELOLA PEMBERITAHUAN PENTING */}
+      {adminSubTab === "kelola_pemberitahuan" && (
+        <div className="space-y-6 animate-fade-in-up">
+          <div className="bg-white border border-slate-150 p-6 rounded-3xl shadow-sm space-y-6">
+            <div className="border-b border-slate-100 pb-5">
+              <h3 className="text-base font-black text-slate-800 flex items-center gap-2">
+                <Megaphone className="w-5 h-5 text-rose-500 animate-bounce" />
+                Kelola Pemberitahuan PENTING Beranda
+              </h3>
+              <p className="text-xs text-slate-400 font-medium">
+                Sesuaikan teks pengumuman penting, lencana (badge) atas, efek berkedip, serta tautan ketika teks diklik secara dinamis langsung dari database real-time.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              {/* Form Input fields */}
+              <div className="lg:col-span-2 space-y-5">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  
+                  <div className="space-y-1.5 sm:col-span-2">
+                    <label className="font-extrabold text-[11px] text-slate-500 block">Lencana Pemberitahuan (Badge)</label>
+                    <input 
+                      type="text" 
+                      value={announcementBadgeText}
+                      onChange={(e) => setAnnouncementBadgeText(e.target.value)}
+                      className="w-full px-3 py-2 text-xs sm:text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-1 focus:ring-emerald-700 text-slate-800 font-bold"
+                      placeholder="e.g. INFO PENTING"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5 sm:col-span-2">
+                    <label className="font-extrabold text-[11px] text-slate-500 block">Isi Teks Pemberitahuan PENTING</label>
+                    <textarea 
+                      value={announcementText}
+                      onChange={(e) => setAnnouncementText(e.target.value)}
+                      rows={3}
+                      className="w-full px-3 py-2 text-xs sm:text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-1 focus:ring-emerald-700 text-slate-800 font-semibold"
+                      placeholder="Tulis informasi krusial di sini..."
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="font-extrabold text-[11px] text-slate-500 block">Aksi Saat Diklik Pembaca</label>
+                    <select
+                      value={announcementActionType}
+                      onChange={(e) => setAnnouncementActionType(e.target.value as any)}
+                      className="w-full px-3 py-2 text-xs sm:text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-1 focus:ring-emerald-700 text-slate-800 font-semibold"
+                    >
+                      <option value="apk">Membuka Modal Unduh & Panduan APK Android</option>
+                      <option value="link">Membuka Tautan URL Kustom (Eksternal)</option>
+                      <option value="none">Tidak Melakukan Aksi (Teks Statis Sahaja)</option>
+                    </select>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="font-extrabold text-[11px] text-slate-500 block">Efek Berkedip-kedip (Blinking)</label>
+                    <div className="flex items-center gap-2 h-9">
+                      <input 
+                        type="checkbox"
+                        id="announcementBlinking"
+                        checked={announcementBlinking}
+                        onChange={(e) => setAnnouncementBlinking(e.target.checked)}
+                        className="w-4 h-4 text-emerald-600 border-slate-300 rounded focus:ring-emerald-500"
+                      />
+                      <label htmlFor="announcementBlinking" className="text-xs text-slate-600 font-bold cursor-pointer select-none">
+                        Aktifkan efek kedip pada teks lencana
+                      </label>
+                    </div>
+                  </div>
+
+                  {announcementActionType === "link" && (
+                    <div className="space-y-1.5 sm:col-span-2">
+                      <label className="font-extrabold text-[11px] text-slate-500 block">URL / Tautan Informasi Kustom</label>
+                      <input 
+                        type="url" 
+                        value={announcementActionUrl}
+                        onChange={(e) => setAnnouncementActionUrl(e.target.value)}
+                        className="w-full px-3 py-2 text-xs sm:text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-1 focus:ring-emerald-700 text-slate-800 font-mono"
+                        placeholder="e.g. https://website-informasi-mgmp.com/artikel-penting"
+                      />
+                    </div>
+                  )}
+
+                </div>
+
+                <div className="flex flex-wrap items-center justify-end gap-3 pt-4 border-t border-slate-100">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (window.confirm("Apakah Anda yakin ingin mengatur ulang pengumuman ke ajakan unduh APK Bawaan?")) {
+                        setAnnouncementText("Segera Install Aplikasi Android Resmi Portal MGMP PAI SMP Subang! Klik di sini untuk panduan instalasi & unduh.");
+                        setAnnouncementBadgeText("INFO PENTING");
+                        setAnnouncementActionType("apk");
+                        setAnnouncementActionUrl("");
+                        setAnnouncementBlinking(true);
+                        setSuccessMsg("Kolom diset ke bawaan. Jangan lupa klik tombol Simpan & Publikasikan untuk mengirim perubahan.");
+                      }
+                    }}
+                    className="bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-black py-2.5 px-4 rounded-xl shadow-sm transition-all cursor-pointer border border-slate-200"
+                  >
+                    Setelan APK Default
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      try {
+                        const payload = {
+                          text: announcementText.trim(),
+                          badgeText: announcementBadgeText.trim(),
+                          actionType: announcementActionType,
+                          actionUrl: announcementActionUrl.trim(),
+                          blinking: announcementBlinking,
+                          updatedAt: new Date().toISOString()
+                        };
+                        
+                        await setDoc(doc(db, "settings", "announcement"), payload);
+                        setSuccessMsg("Pengumuman berhasil diperbarui dan dipublikasikan secara real-time!");
+                      } catch (err: any) {
+                        console.error("Failed to update announcement:", err);
+                        setSuccessMsg("Gagal menyimpan ke Firestore: " + err.message);
+                      }
+                    }}
+                    className="bg-rose-600 hover:bg-rose-500 text-white text-xs font-black py-2.5 px-6 rounded-xl shadow transition-all cursor-pointer border border-rose-700"
+                  >
+                    Simpan & Publikasikan Pengumuman
+                  </button>
+                </div>
+              </div>
+
+              {/* Sidebar Guide */}
+              <div className="bg-slate-50 rounded-2xl p-5 border border-slate-200 shrink-0 space-y-4 text-xs font-sans">
+                <h4 className="text-xs font-black text-slate-600 uppercase tracking-wider">📢 Petunjuk Penggunaan</h4>
+                
+                <div className="space-y-3 leading-relaxed font-semibold text-slate-600">
+                  <p>
+                    Kotak hijau di beranda di bawah bagian heros sangat menarik perhatian guru. Melalui sub-tab ini, Anda dapat merubahnya kapan pun:
+                  </p>
+                  <ul className="list-disc pl-4 space-y-1.5">
+                    <li><strong className="text-slate-800">Isi Pengumuman:</strong> Gunakan kalimat ringkas, padat, dan jelas.</li>
+                    <li><strong className="text-slate-800">Aksi Klik:</strong> Menghubungkan kotak dengan peluncuran APK baru, postingan berita tertentu (masukkan URL), atau nonaktifkan tautan klik.</li>
+                    <li><strong className="text-slate-800">Efek Kedip:</strong> Bagus untuk pemberitahuan mendesak.</li>
+                  </ul>
+                  <div className="bg-emerald-50 border border-emerald-200 text-emerald-900 rounded-xl p-3 text-[10px] space-y-1">
+                    <span className="font-bold block">💡 Integrasi Instant</span>
+                    Semua pengguna yang sedang membuka beranda akan langsung melihat perubahan teks pengumuman dalam 0.1 detik secara real-time tanpa reload!
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* SUB TAB 5: INTEGRASI FIREBASE */}
+      {adminSubTab === "integrasi_firebase" && (
+        <div className="space-y-6 animate-fade-in-up">
+          <div className="bg-white border border-slate-150 p-6 rounded-3xl shadow-sm space-y-6">
+            <div className="border-b border-slate-100 pb-5">
+              <h3 className="text-base font-black text-slate-800 flex items-center gap-2">
+                <Database className="w-5 h-5 text-amber-500" />
+                Integrasi Real-time Database Firebase
+              </h3>
+              <p className="text-xs text-slate-400 font-medium">
+                Konfigurasikan kunci API dan koordinat instansi Firebase Anda secara langsung untuk menghubungkan portal MGMP PAI ini dengan database realtime baru Anda.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              {/* Form Config Fields */}
+              <div className="lg:col-span-2 space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  
+                  <div className="space-y-1.5">
+                    <label className="font-extrabold text-[11px] text-slate-500 block">API Key (Web API Key)</label>
+                    <input 
+                      type="text" 
+                      value={firebaseApiKey}
+                      onChange={(e) => setFirebaseApiKey(e.target.value)}
+                      className="w-full px-3 py-2 text-xs sm:text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-1 focus:ring-emerald-700 text-slate-800 font-mono text-xs"
+                      placeholder="AIzaSy..."
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="font-extrabold text-[11px] text-slate-500 block">Project ID</label>
+                    <input 
+                      type="text" 
+                      value={firebaseProjectId}
+                      onChange={(e) => setFirebaseProjectId(e.target.value)}
+                      className="w-full px-3 py-2 text-xs sm:text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-1 focus:ring-emerald-700 text-slate-800 font-mono text-xs"
+                      placeholder="e.g. promising-card-0pnh2"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="font-extrabold text-[11px] text-slate-500 block">App ID</label>
+                    <input 
+                      type="text" 
+                      value={firebaseAppId}
+                      onChange={(e) => setFirebaseAppId(e.target.value)}
+                      className="w-full px-3 py-2 text-xs sm:text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-1 focus:ring-emerald-700 text-slate-800 font-mono text-xs"
+                      placeholder="e.g. 1:827904139612:web:..."
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="font-extrabold text-[11px] text-slate-500 block">Database ID (ID Firestore Custom)</label>
+                    <input 
+                      type="text" 
+                      value={firebaseDbId}
+                      onChange={(e) => setFirebaseDbId(e.target.value)}
+                      className="w-full px-3 py-2 text-xs sm:text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-1 focus:ring-emerald-700 text-slate-800 font-mono text-xs"
+                      placeholder="e.g. (default) atau nama database custom Anda"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="font-extrabold text-[11px] text-slate-500 block">Auth Domain</label>
+                    <input 
+                      type="text" 
+                      value={firebaseAuthDomain}
+                      onChange={(e) => setFirebaseAuthDomain(e.target.value)}
+                      className="w-full px-3 py-2 text-xs sm:text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-1 focus:ring-emerald-700 text-slate-800 font-mono text-xs"
+                      placeholder="e.g. project-id.firebaseapp.com"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="font-extrabold text-[11px] text-slate-500 block">Storage Bucket</label>
+                    <input 
+                      type="text" 
+                      value={firebaseStorageBucket}
+                      onChange={(e) => setFirebaseStorageBucket(e.target.value)}
+                      className="w-full px-3 py-2 text-xs sm:text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-1 focus:ring-emerald-700 text-slate-800 font-mono text-xs"
+                      placeholder="e.g. project-id.firebasestorage.app"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5 sm:col-span-2">
+                    <label className="font-extrabold text-[11px] text-slate-500 block">Messaging Sender ID</label>
+                    <input 
+                      type="text" 
+                      value={firebaseMessagingSenderId}
+                      onChange={(e) => setFirebaseMessagingSenderId(e.target.value)}
+                      className="w-full px-3 py-2 text-xs sm:text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-1 focus:ring-emerald-700 text-slate-800 font-mono text-xs"
+                      placeholder="e.g. 827904139612"
+                    />
+                  </div>
+
+                </div>
+
+                <div className="flex flex-wrap items-center justify-end gap-3 pt-4">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (window.confirm("Apakah Anda yakin ingin mengatur ulang ke konfigurasi bawaan portal?")) {
+                        localStorage.removeItem("custom_firebase_config");
+                        localStorage.removeItem("custom_firebase_db_id");
+                        setSuccessMsg("Berhasil mereset konfigurasi Firebase ke bawaan portal. Portal akan memuat ulang...");
+                        setTimeout(() => {
+                          window.location.reload();
+                        }, 1500);
+                      }
+                    }}
+                    className="bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-black py-2.5 px-4 rounded-xl shadow-sm transition-all cursor-pointer border border-slate-200"
+                  >
+                    Reset ke Bawaan
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      try {
+                        const testConfig = {
+                          apiKey: firebaseApiKey.trim(),
+                          projectId: firebaseProjectId.trim(),
+                          appId: firebaseAppId.trim(),
+                          authDomain: firebaseAuthDomain.trim(),
+                          storageBucket: firebaseStorageBucket.trim(),
+                          messagingSenderId: firebaseMessagingSenderId.trim()
+                        };
+                        
+                        localStorage.setItem("custom_firebase_config", JSON.stringify(testConfig));
+                        localStorage.setItem("custom_firebase_db_id", firebaseDbId.trim());
+                        
+                        setSuccessMsg("Integrasi Firebase berhasil diterapkan! Halaman akan menyegarkan koneksi dalam 1.5 detik...");
+                        setTimeout(() => {
+                          window.location.reload();
+                        }, 1500);
+                      } catch (err: any) {
+                        console.error("Failed to save config:", err);
+                        setSuccessMsg("Gagal menyimpan konfigurasi: " + err.message);
+                      }
+                    }}
+                    className="bg-emerald-800 hover:bg-emerald-700 text-white text-xs font-black py-2.5 px-6 rounded-xl shadow transition-all cursor-pointer border border-emerald-900"
+                  >
+                    Simpan & Terapkan Integrasi Firebase
+                  </button>
+                </div>
+              </div>
+
+              {/* Help & Instruction Sidebar */}
+              <div className="bg-slate-50 rounded-2xl p-5 border border-slate-200 shrink-0 space-y-4 text-xs font-sans">
+                <h4 className="text-xs font-black text-slate-600 uppercase tracking-wider">ℹ️ Panduan Integrasi Cepat</h4>
+                
+                <div className="space-y-3 leading-relaxed font-semibold text-slate-600">
+                  <p>
+                    Anda tidak perlu lagi mengedit berkas kode HTML atau skrip untuk menyinkronkan database real-time. Ikuti langkah sederhana ini:
+                  </p>
+                  <ol className="list-decimal pl-4 space-y-2">
+                    <li>Buka konsol pengelola Anda di <a href="https://console.firebase.google.com" target="_blank" rel="noreferrer" className="text-emerald-700 underline font-black">Firebase Console</a>.</li>
+                    <li>Salin parameter dari bagian <strong>Project Settings</strong> &gt; <strong>Your Apps</strong> &gt; <strong>SDK Setup and Configuration</strong>.</li>
+                    <li>Tempelkan nilai masing-masing kolom ke kolom konfigurasi di sebelah kiri.</li>
+                    <li>Klik <strong>Simpan & Terapkan Integrasi</strong> untuk menerapkan sambungan real-time instan ke seluruh sistem web.</li>
+                  </ol>
+                  <div className="bg-amber-50 border border-amber-200 text-amber-900 rounded-xl p-3 text-[10px] space-y-1">
+                    <span className="font-bold block">💡 Catatan Keamanan</span>
+                    Konfigurasi disimpan secara aman di peramban dan sinkronisasi. Untuk memulihkan keadaan semula sewaktu-waktu jika terjadi kesalahan pengisian kunci, klik tombol <span className="font-bold text-slate-800">Reset ke Bawaan</span>.
+                  </div>
                 </div>
               </div>
             </div>

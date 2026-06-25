@@ -183,7 +183,7 @@ export default function BerandaTab({ news, onSelectNews, onChangeTab, articles =
       </section>
 
       {/* SILADIK PAI SUBANG - Real-time Database Dashboard */}
-      <SiladikDashboard />
+      <SiladikDashboard onOpenApkInfo={() => setIsApkModalOpen(true)} />
 
       {/* Kolom Berbagi Nasihat (Undangan Menulis) */}
       <section id="latest-articles-section" className="space-y-6">

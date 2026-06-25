@@ -30,11 +30,35 @@ import {
   AlertCircle
 } from "lucide-react";
 
-export default function SiladikDashboard() {
+interface SiladikDashboardProps {
+  onOpenApkInfo?: () => void;
+}
+
+export default function SiladikDashboard({ onOpenApkInfo }: SiladikDashboardProps) {
   const [teachers, setTeachers] = useState<TeacherData[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   
+  // Dynamic global announcement
+  const [announcement, setAnnouncement] = useState<{
+    text: string;
+    badgeText: string;
+    actionUrl: string;
+    actionType: "apk" | "link" | "none";
+    blinking: boolean;
+  }>(() => {
+    try {
+      const saved = localStorage.getItem("mgmp_pai_announcement");
+      if (saved) return JSON.parse(saved);
+    } catch (e) {}
+    return {
+      text: "Segera Install Aplikasi Android Resmi Portal MGMP PAI SMP Subang! Klik di sini untuk panduan instalasi & unduh.",
+      badgeText: "INFO PENTING",
+      actionUrl: "",
+      actionType: "apk",
+      blinking: true
+    };
+  });
   
   // Custom alert/notification inside Siladik
   const [notification, setNotification] = useState<{
@@ -47,6 +71,31 @@ export default function SiladikDashboard() {
     setNotification({ text, type });
     setTimeout(() => setNotification(null), 4000);
   };
+
+  // Listen to custom announcement settings
+  useEffect(() => {
+    const announcementDoc = doc(db, "settings", "announcement");
+    const unsubAnnouncement = onSnapshot(announcementDoc, (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        const updated = {
+          text: data.text || "Segera Install Aplikasi Android Resmi Portal MGMP PAI SMP Subang! Klik di sini untuk panduan instalasi & unduh.",
+          badgeText: data.badgeText || "INFO PENTING",
+          actionUrl: data.actionUrl || "",
+          actionType: data.actionType || "apk",
+          blinking: data.blinking !== undefined ? data.blinking : true
+        };
+        setAnnouncement(updated);
+        localStorage.setItem("mgmp_pai_announcement", JSON.stringify(updated));
+      }
+    }, (err) => {
+      console.error("Firestore listening to announcement error:", err);
+    });
+
+    return () => {
+      unsubAnnouncement();
+    };
+  }, []);
 
   // Seed data & listen to Firestore changes
   useEffect(() => {
@@ -128,23 +177,46 @@ export default function SiladikDashboard() {
 
   return (
     <div id="siladik-system" className="space-y-6 pt-4">
+      <style>{`
+        @keyframes blink-accent {
+          0%, 100% { opacity: 1; color: #facc15; }
+          50% { opacity: 0.3; color: #ffffff; }
+        }
+        .blink-text {
+          animation: blink-accent 1.2s infinite;
+        }
+      `}</style>
       {/* Tab Select & Header bar */}
-      <div id="siladik-header" className="bg-[#0e744c] text-white rounded-3xl p-6 md:p-8 shadow-md border border-emerald-800 flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
-        <div className="space-y-2">
+      <div 
+        id="siladik-header" 
+        onClick={() => {
+          if (announcement.actionType === "apk") {
+            if (onOpenApkInfo) onOpenApkInfo();
+          } else if (announcement.actionType === "link" && announcement.actionUrl) {
+            window.open(announcement.actionUrl, "_blank", "noopener,noreferrer");
+          }
+        }}
+        className={`bg-[#0e744c] hover:bg-[#0c6341] active:bg-[#0a5236] text-white rounded-3xl p-6 md:p-8 shadow-md border border-emerald-800 flex flex-col justify-between items-start gap-4 transition-all ${
+          announcement.actionType !== "none" ? "cursor-pointer group" : ""
+        }`}
+      >
+        <div className="space-y-2 w-full">
           <div className="flex items-center gap-2">
-            <span className="bg-emerald-500/20 text-emerald-300 font-extrabold text-[10px] tracking-widest px-2.5 py-1 rounded-full border border-emerald-500/30 uppercase">
-              Database Terintegrasi
+            <span className="bg-amber-400 text-emerald-950 font-black text-[10px] tracking-wider px-2.5 py-1 rounded-full border border-amber-300/40 uppercase">
+              {announcement.badgeText}
             </span>
-            <span className="bg-amber-400 text-emerald-950 font-black text-[9px] px-2 py-0.5 rounded uppercase font-mono animate-pulse">
-              LIVE (SILADIK)
+            <span className="bg-rose-500 text-white font-black text-[9px] px-2 py-0.5 rounded uppercase font-mono animate-pulse">
+              URGENT
             </span>
           </div>
-          <h2 className="text-xl md:text-2xl font-black tracking-tight text-white leading-tight">
-            Database Terintegrasi Dashboard Statistik
+          <h2 className="text-lg md:text-xl font-black tracking-tight leading-tight select-none">
+            <span className={`${announcement.blinking ? "blink-text animate-pulse" : "text-amber-400"} font-black mr-2`}>
+              INFO PENTING:
+            </span> 
+            <span className={`${announcement.actionType !== "none" ? "group-hover:underline" : ""} text-white font-bold`}>
+              {announcement.text}
+            </span>
           </h2>
-          <p className="text-xs text-[#ffffff] leading-relaxed font-medium">
-            Sistem Layanan Terpadu Musyawarah Guru Mata Pelajaran Agama Islam SMP Kabupaten Subang.
-          </p>
         </div>
       </div>
 
@@ -198,15 +270,20 @@ export default function SiladikDashboard() {
             {/* Rasio Teritorial (Professional Vertical Column Chart / Diagram Batang Vertikal) */}
             <div className="bg-white border border-slate-100 rounded-3xl p-6 md:p-8 shadow-sm flex flex-col justify-between space-y-6">
               
-              <div className="space-y-1 pb-4 border-b border-slate-100">
-                <span className="text-[10px] font-extrabold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-md uppercase tracking-wider inline-block">
-                  Rasio Teritorial Wilayah
-                </span>
-                <h3 className="text-base md:text-lg font-black text-slate-800 tracking-tight flex items-center gap-2">
-                  Diagram Sebaran Guru PAI
-                </h3>
-                <p className="text-xs text-[#000000] font-medium">
-                  Persentase kontribusi dan keaktifan koordinasi sebaran guru PAI di 6 Rayon Komisariat Wilayah Kabupaten Subang.
+              <div className="flex flex-col pb-4 border-b border-slate-100 gap-3">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <div className="w-3 h-3 rounded-full bg-emerald-500 animate-pulse shrink-0"></div>
+                    <h3 className="text-base font-black text-slate-800 tracking-tight uppercase">
+                      Database Terintegrasi Live
+                    </h3>
+                  </div>
+                  <div className="text-[10px] font-black text-emerald-700 bg-emerald-50 border border-emerald-200/50 px-2.5 py-1 rounded-full uppercase tracking-wider whitespace-nowrap">
+                    Real-time Sync
+                  </div>
+                </div>
+                <p className="text-xs text-slate-500 font-semibold leading-relaxed">
+                  Sistem Layanan Terpadu Musyawarah Guru Mata Pelajaran Agama Islam SMP Kabupaten Subang.
                 </p>
               </div>
 
