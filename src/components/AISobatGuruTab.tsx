@@ -598,7 +598,7 @@ export default function AISobatGuruTab({ onShareToArticles }: AISobatGuruTabProp
 
           <div className="border-t border-slate-100 pt-4 flex flex-col items-center space-y-2 text-[10px] text-slate-400 font-medium text-center leading-relaxed">
             <p className="font-semibold text-slate-500">
-              💡 <strong>Catatan Demo & Simulasi:</strong> Akun guru lunas bawaan adalah: <code className="bg-slate-150 text-slate-800 px-1 py-0.5 rounded font-mono font-bold">ahmad.fauzi</code> / <code className="bg-slate-150 text-slate-800 px-1 py-0.5 rounded font-mono font-bold">sigap123</code>. Akun terkunci belum bayar bawaan adalah: <code className="bg-slate-150 text-slate-800 px-1 py-0.5 rounded font-mono font-bold">lailatul</code> / <code className="bg-slate-150 text-slate-800 px-1 py-0.5 rounded font-mono font-bold">sigap123</code>. Anda bisa menyesuaikan status iuran atau kredensial guru apa pun lewat menu <strong>Admin Panel &gt; Kelola Data Guru</strong> secara instan.
+              💡 <strong>Petunjuk Akses SILADIK:</strong> Akun guru terdaftar bawaan: <code className="bg-slate-150 text-slate-800 px-1 py-0.5 rounded font-mono font-bold">ahmad.fauzi</code> / <code className="bg-slate-150 text-slate-800 px-1 py-0.5 rounded font-mono font-bold">sigap123</code> (Iuran Lunas), atau <code className="bg-slate-150 text-slate-800 px-1 py-0.5 rounded font-mono font-bold">lailatul</code> / <code className="bg-slate-150 text-slate-800 px-1 py-0.5 rounded font-mono font-bold">sigap123</code> (Belum Lunas).
             </p>
             <p className="text-slate-350">Portal Database SILADIK Terverifikasi Dokumen Resmi MGMP PAI SMP Kabupaten Subang</p>
           </div>

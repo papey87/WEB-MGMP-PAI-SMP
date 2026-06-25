@@ -10,7 +10,8 @@ import AdminTab from "./components/AdminTab";
 import ArtikelTab, { SEED_ARTICLES } from "./components/ArtikelTab";
 import LogoMGMP from "./components/LogoMGMP";
 import { collection, onSnapshot, query, orderBy } from "firebase/firestore";
-import { db } from "./lib/firebase";
+import { db, auth } from "./lib/firebase";
+import { onAuthStateChanged } from "firebase/auth";
 import { 
   GraduationCap, 
   BookOpen, 
@@ -74,12 +75,11 @@ export default function App() {
   const [showAdminTab, setShowAdminTab] = useState<boolean>(() => {
     try {
       const params = new URLSearchParams(window.location.search);
-      const hasSecret = params.get("admin") === "true" || 
-                        params.get("admin") === "1" || 
-                        params.get("access") === "admin" || 
-                        params.get("secret") === "admin" || 
-                        params.get("kode") === "admin" ||
-                        params.get("key") === "admin";
+      const hasSecret = params.get("admin") === "subang-juara" || 
+                        params.get("akses") === "siladik-subang" || 
+                        params.get("secret") === "mgmp-subang-juara" || 
+                        params.get("kode") === "admin-mgmp-subang" ||
+                        params.get("key") === "siladik-2026";
       if (hasSecret) {
         localStorage.setItem("admin_portal_access", "true");
         return true;
@@ -89,6 +89,17 @@ export default function App() {
     }
     return localStorage.getItem("admin_portal_access") === "true";
   });
+
+  // Automatically reveal admin tab if officially logged in as the authorized admin
+  useEffect(() => {
+    const unsub = onAuthStateChanged(auth, (currentUser) => {
+      if (currentUser && currentUser.email === "feri.gunawan87@gmail.com") {
+        setShowAdminTab(true);
+        localStorage.setItem("admin_portal_access", "true");
+      }
+    });
+    return () => unsub();
+  }, []);
   const [selectedNews, setSelectedNews] = useState<NewsItem | null>(null);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [newsList, setNewsList] = useState<NewsItem[]>(INITIAL_NEWS);

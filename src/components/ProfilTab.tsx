@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { Users, Shield, Target, Award, MapPin, BadgeCheck, Plus, Trash2, Edit3, X, Check, User as LucideUser, Upload } from "lucide-react";
+import { doc, onSnapshot, setDoc } from "firebase/firestore";
+import { db } from "../lib/firebase";
 
 const STRUKTUR_ORGANISASI = [
   {
@@ -123,11 +125,57 @@ export default function ProfilTab() {
     };
   }, []);
 
+  // Firebase Real-time Synchronization for Profile
+  useEffect(() => {
+    const docRef = doc(db, "settings", "profile");
+    const unsub = onSnapshot(docRef, (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        if (data.visi !== undefined) {
+          setProfileVisi(data.visi);
+          setTempVisi(data.visi);
+        }
+        if (data.misi !== undefined) setProfileMisi(data.misi);
+        if (data.tujuan !== undefined) setProfileTujuan(data.tujuan);
+        if (data.structure !== undefined) setStructureList(data.structure);
+      } else {
+        // Seed initial values to Firestore if it doesn't exist yet
+        setDoc(docRef, {
+          visi: INITIAL_VISI,
+          misi: INITIAL_MISI,
+          tujuan: INITIAL_TUJUAN,
+          structure: STRUKTUR_ORGANISASI
+        }).catch(err => console.error("Error seeding profile setting doc in ProfilTab:", err));
+      }
+    });
+    return () => unsub();
+  }, []);
+
+  const syncProfileToFirestore = async (
+    updatedVisi?: string,
+    updatedMisi?: string[],
+    updatedTujuan?: any[],
+    updatedStructure?: any[]
+  ) => {
+    try {
+      const docRef = doc(db, "settings", "profile");
+      const payload: any = {};
+      if (updatedVisi !== undefined) payload.visi = updatedVisi;
+      if (updatedMisi !== undefined) payload.misi = updatedMisi;
+      if (updatedTujuan !== undefined) payload.tujuan = updatedTujuan;
+      if (updatedStructure !== undefined) payload.structure = updatedStructure;
+      await setDoc(docRef, payload, { merge: true });
+    } catch (err) {
+      console.error("Failed to sync profile to Firebase:", err);
+    }
+  };
+
   // Save Visi
   const handleSaveVisi = (e: React.FormEvent) => {
     e.preventDefault();
     setProfileVisi(tempVisi);
     localStorage.setItem("mgmp_profile_visi", tempVisi);
+    syncProfileToFirestore(tempVisi);
     setIsVisiModalOpen(false);
   };
 
@@ -146,6 +194,7 @@ export default function ProfilTab() {
 
     setProfileMisi(updated);
     localStorage.setItem("mgmp_profile_misi", JSON.stringify(updated));
+    syncProfileToFirestore(undefined, updated);
     setIsMisiModalOpen(false);
     setEditingMisiIdx(null);
     setTempMisiText("");
@@ -156,6 +205,7 @@ export default function ProfilTab() {
     const updated = profileMisi.filter((_, i) => i !== idx);
     setProfileMisi(updated);
     localStorage.setItem("mgmp_profile_misi", JSON.stringify(updated));
+    syncProfileToFirestore(undefined, updated);
   };
 
   // Add / Edit Tujuan
@@ -173,6 +223,7 @@ export default function ProfilTab() {
 
     setProfileTujuan(updated);
     localStorage.setItem("mgmp_profile_tujuan", JSON.stringify(updated));
+    syncProfileToFirestore(undefined, undefined, updated);
     setIsTujuanModalOpen(false);
     setEditingTujuanIdx(null);
     setTempTujuanTitle("");
@@ -184,6 +235,7 @@ export default function ProfilTab() {
     const updated = profileTujuan.filter((_, i) => i !== idx);
     setProfileTujuan(updated);
     localStorage.setItem("mgmp_profile_tujuan", JSON.stringify(updated));
+    syncProfileToFirestore(undefined, undefined, updated);
   };
 
   // Save / Add Board Member
@@ -210,6 +262,7 @@ export default function ProfilTab() {
 
     setStructureList(updated);
     localStorage.setItem("mgmp_profile_structure", JSON.stringify(updated));
+    syncProfileToFirestore(undefined, undefined, undefined, updated);
     setIsStructureModalOpen(false);
     setEditingStructureIdx(null);
     setStructureName("");
@@ -225,6 +278,7 @@ export default function ProfilTab() {
     const updated = structureList.filter((_, i) => i !== idx);
     setStructureList(updated);
     localStorage.setItem("mgmp_profile_structure", JSON.stringify(updated));
+    syncProfileToFirestore(undefined, undefined, undefined, updated);
   };
 
   return (

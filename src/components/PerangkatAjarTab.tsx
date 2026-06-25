@@ -1,4 +1,6 @@
 import React, { useState, useEffect } from "react";
+import { collection, onSnapshot, setDoc, doc, updateDoc } from "firebase/firestore";
+import { db } from "../lib/firebase";
 import { TeacherResource } from "../types";
 import { 
   Search, 
@@ -167,31 +169,58 @@ export default function PerangkatAjarTab() {
   const [articleContent, setArticleContent] = useState("");
   const [selectedArticleDetail, setSelectedArticleDetail] = useState<any | null>(null);
 
-  // Load from LocalStorage or fallback
+  // Load from Firestore or fallback
   useEffect(() => {
-    const saved = localStorage.getItem("mgmp_pai_resources");
-    if (saved) {
-      try {
-        setResources(JSON.parse(saved));
-      } catch (e) {
+    // 1. Subscribe to teaching resources
+    const unsubResources = onSnapshot(collection(db, "resources"), async (snap) => {
+      if (!snap.empty) {
+        const list: TeacherResource[] = [];
+        snap.forEach((docSnap) => {
+          list.push({ id: docSnap.id, ...docSnap.data() } as any);
+        });
+        list.sort((a, b) => a.id.localeCompare(b.id));
+        setResources(list);
+        localStorage.setItem("mgmp_pai_resources", JSON.stringify(list));
+      } else {
         setResources(INITIAL_RESOURCES);
+        localStorage.setItem("mgmp_pai_resources", JSON.stringify(INITIAL_RESOURCES));
+        for (const res of INITIAL_RESOURCES) {
+          try {
+            await setDoc(doc(db, "resources", res.id), res);
+          } catch (e) {
+            console.error("Error seeding resource:", res.id, e);
+          }
+        }
       }
-    } else {
-      setResources(INITIAL_RESOURCES);
-      localStorage.setItem("mgmp_pai_resources", JSON.stringify(INITIAL_RESOURCES));
-    }
+    });
 
-    const savedArticles = localStorage.getItem("mgmp_pai_articles");
-    if (savedArticles) {
-      try {
-        setArticles(JSON.parse(savedArticles));
-      } catch (e) {
+    // 2. Subscribe to articles
+    const unsubArticles = onSnapshot(collection(db, "articles"), async (snap) => {
+      if (!snap.empty) {
+        const list: any[] = [];
+        snap.forEach((docSnap) => {
+          list.push({ id: docSnap.id, ...docSnap.data() });
+        });
+        list.sort((a, b) => b.id.localeCompare(a.id)); // Newest first
+        setArticles(list);
+        localStorage.setItem("mgmp_pai_articles", JSON.stringify(list));
+      } else {
         setArticles(INITIAL_ARTICLES);
+        localStorage.setItem("mgmp_pai_articles", JSON.stringify(INITIAL_ARTICLES));
+        for (const art of INITIAL_ARTICLES) {
+          try {
+            await setDoc(doc(db, "articles", art.id), art);
+          } catch (e) {
+            console.error("Error seeding article:", art.id, e);
+          }
+        }
       }
-    } else {
-      setArticles(INITIAL_ARTICLES);
-      localStorage.setItem("mgmp_pai_articles", JSON.stringify(INITIAL_ARTICLES));
-    }
+    });
+
+    return () => {
+      unsubResources();
+      unsubArticles();
+    };
   }, []);
 
   const [verifiedTeacher] = useState<any | null>(() => {
@@ -369,7 +398,10 @@ export default function PerangkatAjarTab() {
       
       const updated = resources.map((res) => {
         if (res.id === id) {
-          return { ...res, downloads: res.downloads + 1 };
+          const newDl = res.downloads + 1;
+          updateDoc(doc(db, "resources", id), { downloads: newDl })
+            .catch(err => console.error("Failed to sync downloads to Firestore:", err));
+          return { ...res, downloads: newDl };
         }
         return res;
       });
@@ -384,7 +416,10 @@ export default function PerangkatAjarTab() {
     setTimeout(() => {
       const updated = resources.map((res) => {
         if (res.id === id) {
-          return { ...res, downloads: res.downloads + 1 };
+          const newDl = res.downloads + 1;
+          updateDoc(doc(db, "resources", id), { downloads: newDl })
+            .catch(err => console.error("Failed to sync downloads to Firestore:", err));
+          return { ...res, downloads: newDl };
         }
         return res;
       });
@@ -425,6 +460,8 @@ export default function PerangkatAjarTab() {
     const updated = [nRes, ...resources];
     setResources(updated);
     localStorage.setItem("mgmp_pai_resources", JSON.stringify(updated));
+    setDoc(doc(db, "resources", nRes.id), nRes)
+      .catch((err) => console.error("Failed to sync new resource to Firestore:", err));
 
     // Form inputs cleanup
     setNewTitle("");
@@ -576,6 +613,8 @@ export default function PerangkatAjarTab() {
                 const updated = [nArt, ...articles];
                 setArticles(updated);
                 localStorage.setItem("mgmp_pai_articles", JSON.stringify(updated));
+                setDoc(doc(db, "articles", nArt.id), nArt)
+                  .catch((err) => console.error("Failed to sync new article to Firestore:", err));
 
                 // Clean up
                 setArticleTitle("");

@@ -1,4 +1,6 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
+import { doc, onSnapshot } from "firebase/firestore";
+import { db } from "../lib/firebase";
 import { NewsItem, ArticleItem } from "../types";
 import SiladikDashboard from "./SiladikDashboard";
 import { 
@@ -59,10 +61,36 @@ export default function BerandaTab({ news, onSelectNews, onChangeTab, articles =
 
   const latestArticles = articles.slice(0, 3);
 
-  const apkVersion = localStorage.getItem("apk_version") || "v1.2.0";
-  const apkBuild = localStorage.getItem("apk_build") || "Build 2026/06";
-  const apkFilename = localStorage.getItem("apk_filename") || "mgmp-pai-subang-v12.apk";
-  const apkSize = localStorage.getItem("apk_size") || "24.8 MB";
+  const [apkVersion, setApkVersion] = useState(() => localStorage.getItem("apk_version") || "v1.2.0");
+  const [apkBuild, setApkBuild] = useState(() => localStorage.getItem("apk_build") || "Build 2026/06");
+  const [apkFilename, setApkFilename] = useState(() => localStorage.getItem("apk_filename") || "mgmp-pai-subang-v12.apk");
+  const [apkSize, setApkSize] = useState(() => localStorage.getItem("apk_size") || "24.8 MB");
+
+  useEffect(() => {
+    const docRef = doc(db, "settings", "apk");
+    const unsub = onSnapshot(docRef, (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        if (data.version) {
+          setApkVersion(data.version);
+          localStorage.setItem("apk_version", data.version);
+        }
+        if (data.build) {
+          setApkBuild(data.build);
+          localStorage.setItem("apk_build", data.build);
+        }
+        if (data.filename) {
+          setApkFilename(data.filename);
+          localStorage.setItem("apk_filename", data.filename);
+        }
+        if (data.size) {
+          setApkSize(data.size);
+          localStorage.setItem("apk_size", data.size);
+        }
+      }
+    });
+    return () => unsub();
+  }, []);
 
   const startApkDownload = () => {
     if (dlState === "downloading") return;

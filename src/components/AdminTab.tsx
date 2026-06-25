@@ -9,7 +9,8 @@ import {
   onSnapshot, 
   query, 
   orderBy, 
-  writeBatch
+  writeBatch,
+  setDoc
 } from "firebase/firestore";
 import { 
   signInWithPopup, 
@@ -119,6 +120,8 @@ export default function AdminTab({ onLogout }: AdminTabProps = {}) {
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState("");
   const [successMsg, setSuccessMsg] = useState("");
+  const [passcode, setPasscode] = useState("");
+  const [emailInput, setEmailInput] = useState("feri.gunawan87@gmail.com");
 
   // DB collections state
   const [teachers, setTeachers] = useState<TeacherData[]>([]);
@@ -280,14 +283,64 @@ export default function AdminTab({ onLogout }: AdminTabProps = {}) {
   // Allowed specific admins (as requested: Admin Only)
   const allowedAdminEmails = ["feri.gunawan87@gmail.com"];
 
+  const saveProfileToFirestore = async (
+    updatedVisi?: string,
+    updatedMisi?: string[],
+    updatedTujuan?: any[],
+    updatedStructure?: any[]
+  ) => {
+    try {
+      const docRef = doc(db, "settings", "profile");
+      const payload: any = {};
+      if (updatedVisi !== undefined) payload.visi = updatedVisi;
+      if (updatedMisi !== undefined) payload.misi = updatedMisi;
+      if (updatedTujuan !== undefined) payload.tujuan = updatedTujuan;
+      if (updatedStructure !== undefined) payload.structure = updatedStructure;
+
+      // Update local storage too as a fallback/mirror
+      if (updatedVisi !== undefined) localStorage.setItem("mgmp_profile_visi", updatedVisi);
+      if (updatedMisi !== undefined) localStorage.setItem("mgmp_profile_misi", JSON.stringify(updatedMisi));
+      if (updatedTujuan !== undefined) localStorage.setItem("mgmp_profile_tujuan", JSON.stringify(updatedTujuan));
+      if (updatedStructure !== undefined) localStorage.setItem("mgmp_profile_structure", JSON.stringify(updatedStructure));
+
+      await setDoc(docRef, payload, { merge: true });
+    } catch (e) {
+      console.error("Error saving profile settings to firestore:", e);
+    }
+  };
+
   // Check auth state trigger
   useEffect(() => {
+    const savedEmail = localStorage.getItem("admin_logged_in_email");
+    const savedName = localStorage.getItem("admin_logged_in_name");
+    if (savedEmail && allowedAdminEmails.includes(savedEmail)) {
+      setUser({
+        uid: "admin-feri-gunawan",
+        email: savedEmail,
+        displayName: savedName || "Feri Gunawan",
+        emailVerified: true
+      } as any);
+      setIsSimulated(false);
+      setLoading(false);
+      return;
+    }
+
     const unsub = onAuthStateChanged(auth, (currentUser) => {
       if (currentUser) {
-        setUser(currentUser);
-        setIsSimulated(false);
+        const email = currentUser.email || "";
+        if (allowedAdminEmails.includes(email)) {
+          setUser(currentUser);
+          setIsSimulated(false);
+        } else {
+          signOut(auth).catch(err => console.error(err));
+          setUser(null);
+          localStorage.removeItem("admin_portal_access");
+          setErrorMsg(`Akun Google (${email}) Anda tidak terdaftar sebagai administrator.`);
+        }
       } else {
-        setUser(null);
+        if (!localStorage.getItem("admin_logged_in_email")) {
+          setUser(null);
+        }
       }
       setLoading(false);
     });
@@ -404,10 +457,35 @@ export default function AdminTab({ onLogout }: AdminTabProps = {}) {
       handleFirestoreError(err, OperationType.LIST, "ai-interactions");
     });
 
+    // 4. Subscribe to profile settings doc
+    const unsubProfile = onSnapshot(doc(db, "settings", "profile"), (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        if (data.visi !== undefined) setAdminVisi(data.visi);
+        if (data.misi !== undefined) setAdminMisi(data.misi);
+        if (data.tujuan !== undefined) setAdminTujuan(data.tujuan);
+        if (data.structure !== undefined) setAdminStructure(data.structure);
+      }
+    });
+
+    // 5. Subscribe to APK settings doc
+    const unsubApk = onSnapshot(doc(db, "settings", "apk"), (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        if (data.version !== undefined) setApkVersionInput(data.version);
+        if (data.build !== undefined) setApkBuildInput(data.build);
+        if (data.filename !== undefined) setApkFilenameInput(data.filename);
+        if (data.size !== undefined) setApkSizeInput(data.size);
+        if (data.data !== undefined) setApkDataInput(data.data);
+      }
+    });
+
     return () => {
       unsubTeachers();
       unsubNews();
       unsubInteractions();
+      unsubProfile();
+      unsubApk();
     };
   }, [user, isSimulated]);
 
@@ -433,13 +511,52 @@ export default function AdminTab({ onLogout }: AdminTabProps = {}) {
     }
   };
 
-  const handleSimulatedSignIn = () => {
-    setIsSimulated(true);
-    localStorage.setItem("admin_is_simulated", "true");
-    setSimulatedEmail("feri.gunawan87@gmail.com");
-    setSuccessMsg("Akses Simulasi Admin berhasil diperoleh! (Developer Mode)");
+  const handlePasscodeSignIn = (e: React.FormEvent) => {
+    e.preventDefault();
     setErrorMsg("");
-    window.dispatchEvent(new Event("storage"));
+    setSuccessMsg("");
+    const cleanEmail = emailInput.trim().toLowerCase();
+    const cleanPass = passcode.trim();
+
+    if (!cleanEmail) {
+      setErrorMsg("Silakan masukkan email administrator.");
+      return;
+    }
+    if (!cleanPass) {
+      setErrorMsg("Silakan masukkan kode akses.");
+      return;
+    }
+    if (!allowedAdminEmails.includes(cleanEmail)) {
+      setErrorMsg(`Akun (${cleanEmail}) Anda tidak terdaftar sebagai administrator.`);
+      return;
+    }
+
+    const validCodes = [
+      "subang-juara",
+      "siladik-subang",
+      "mgmp-subang-juara",
+      "admin-mgmp-subang",
+      "siladik-2026"
+    ];
+
+    if (validCodes.includes(cleanPass)) {
+      localStorage.setItem("admin_logged_in_email", cleanEmail);
+      localStorage.setItem("admin_logged_in_name", "Feri Gunawan");
+      localStorage.setItem("admin_portal_access", "true");
+      
+      setUser({
+        uid: "admin-feri-gunawan",
+        email: cleanEmail,
+        displayName: "Feri Gunawan",
+        emailVerified: true
+      } as any);
+      setIsSimulated(false);
+      setSuccessMsg("Selamat Datang! Login Admin berhasil diverifikasi via Kode Akses.");
+      setPasscode("");
+      window.dispatchEvent(new Event("storage"));
+    } else {
+      setErrorMsg("Kode akses salah atau tidak valid. Silakan periksa kembali.");
+    }
   };
 
   const handleSignOut = async () => {
@@ -451,6 +568,8 @@ export default function AdminTab({ onLogout }: AdminTabProps = {}) {
       } else {
         await signOut(auth);
       }
+      localStorage.removeItem("admin_logged_in_email");
+      localStorage.removeItem("admin_logged_in_name");
       localStorage.removeItem("admin_is_simulated");
       localStorage.removeItem("admin_portal_access");
       setUser(null);
@@ -784,6 +903,45 @@ export default function AdminTab({ onLogout }: AdminTabProps = {}) {
               Masuk dengan Akun Google
             </button>
           </div>
+
+          <div className="relative flex py-2 items-center">
+            <div className="flex-grow border-t border-emerald-800/40"></div>
+            <span className="flex-shrink mx-3 text-[10px] text-emerald-300/65 font-bold uppercase tracking-wider">Atau Gunakan Kode Akses</span>
+            <div className="flex-grow border-t border-emerald-800/40"></div>
+          </div>
+
+          <form onSubmit={handlePasscodeSignIn} className="space-y-4 text-left">
+            <div>
+              <label className="block text-[11px] font-bold text-emerald-300 mb-1.5 uppercase tracking-wide">
+                Email Administrator:
+              </label>
+              <input
+                type="email"
+                placeholder="Contoh: feri.gunawan87@gmail.com"
+                value={emailInput}
+                onChange={(e) => setEmailInput(e.target.value)}
+                className="w-full bg-emerald-950/80 border border-emerald-800 focus:border-amber-400 focus:ring-1 focus:ring-amber-400 text-white placeholder-emerald-600/70 text-xs font-bold py-3 px-4 rounded-xl transition-all outline-none"
+              />
+            </div>
+            <div>
+              <label className="block text-[11px] font-bold text-emerald-300 mb-1.5 uppercase tracking-wide">
+                Kode Akses Khusus Admin:
+              </label>
+              <input
+                type="password"
+                placeholder="Masukkan kode rahasia admin..."
+                value={passcode}
+                onChange={(e) => setPasscode(e.target.value)}
+                className="w-full bg-emerald-950/80 border border-emerald-800 focus:border-amber-400 focus:ring-1 focus:ring-amber-400 text-white placeholder-emerald-600 text-xs font-bold py-3 px-4 rounded-xl transition-all outline-none"
+              />
+            </div>
+            <button
+              type="submit"
+              className="w-full bg-amber-500 hover:bg-amber-600 active:bg-amber-700 text-emerald-950 text-xs font-black py-3 px-5 rounded-xl shadow-md hover:shadow-lg transition-all active:scale-95 cursor-pointer"
+            >
+              Verifikasi Kode Akses & Email
+            </button>
+          </form>
 
           <p className="text-[10px] text-emerald-300/40 font-mono">
             SILADIK Security Module | Protected with Firebase Auth @{new Date().getFullYear()}
@@ -1294,7 +1452,7 @@ export default function AdminTab({ onLogout }: AdminTabProps = {}) {
                     <span>* Perubahan visi akan langsung ter-render di tab Profil bagi seluruh pengunjung portal.</span>
                     <button
                       onClick={() => {
-                        localStorage.setItem("mgmp_profile_visi", adminVisi);
+                        saveProfileToFirestore(adminVisi);
                         setSuccessMsg("Pernyataan visi organisasi berhasil diperbarui!");
                         setTimeout(() => setSuccessMsg(""), 3000);
                       }}
@@ -1337,7 +1495,7 @@ export default function AdminTab({ onLogout }: AdminTabProps = {}) {
                           updated = [...adminMisi, newMisiText.trim()];
                         }
                         setAdminMisi(updated);
-                        localStorage.setItem("mgmp_profile_misi", JSON.stringify(updated));
+                        saveProfileToFirestore(undefined, updated);
                         setNewMisiText("");
                         setSuccessMsg("Butir misi organisasi berhasil diperbarui!");
                         setTimeout(() => setSuccessMsg(""), 3000);
@@ -1386,7 +1544,7 @@ export default function AdminTab({ onLogout }: AdminTabProps = {}) {
                             if (window.confirm("Hapus butir misi ini?")) {
                               const updated = adminMisi.filter((_, i) => i !== idx);
                               setAdminMisi(updated);
-                              localStorage.setItem("mgmp_profile_misi", JSON.stringify(updated));
+                              saveProfileToFirestore(undefined, updated);
                               setSuccessMsg("Misi berhasil dihapus!");
                               setTimeout(() => setSuccessMsg(""), 3000);
                             }
@@ -1453,7 +1611,7 @@ export default function AdminTab({ onLogout }: AdminTabProps = {}) {
                             updated = [...adminTujuan, record];
                           }
                           setAdminTujuan(updated);
-                          localStorage.setItem("mgmp_profile_tujuan", JSON.stringify(updated));
+                          saveProfileToFirestore(undefined, undefined, updated);
                           setNewTujuanTitle("");
                           setNewTujuanDesc("");
                           setSuccessMsg("Butir tujuan berhasil diperbarui!");
@@ -1506,7 +1664,7 @@ export default function AdminTab({ onLogout }: AdminTabProps = {}) {
                               if (window.confirm("Hapus butir tujuan ini?")) {
                                 const updated = adminTujuan.filter((_, i) => i !== idx);
                                 setAdminTujuan(updated);
-                                localStorage.setItem("mgmp_profile_tujuan", JSON.stringify(updated));
+                                saveProfileToFirestore(undefined, undefined, updated);
                                 setSuccessMsg("Butir sasaran berhasil dihapus!");
                                 setTimeout(() => setSuccessMsg(""), 3000);
                               }
@@ -1609,7 +1767,7 @@ export default function AdminTab({ onLogout }: AdminTabProps = {}) {
                             if (window.confirm(`Hapus anggota pengurus "${member.name}" dari dewan pengurus?`)) {
                               const updated = adminStructure.filter((_, i) => i !== idx);
                               setAdminStructure(updated);
-                              localStorage.setItem("mgmp_profile_structure", JSON.stringify(updated));
+                              saveProfileToFirestore(undefined, undefined, undefined, updated);
                               setSuccessMsg("Anggota pengurus berhasil dihapus!");
                               setTimeout(() => setSuccessMsg(""), 3000);
                             }
@@ -1663,7 +1821,7 @@ export default function AdminTab({ onLogout }: AdminTabProps = {}) {
                           updated = [...adminStructure, record];
                         }
                         setAdminStructure(updated);
-                        localStorage.setItem("mgmp_profile_structure", JSON.stringify(updated));
+                        saveProfileToFirestore(undefined, undefined, undefined, updated);
                         setIsMemberModalOpen(false);
                         setSuccessMsg("Keanggotaan struktur organisasi berhasil diperbarui!");
                         setTimeout(() => setSuccessMsg(""), 3000);
@@ -1887,12 +2045,23 @@ export default function AdminTab({ onLogout }: AdminTabProps = {}) {
                 <div className="flex justify-end pt-3">
                   <button
                     type="button"
-                    onClick={() => {
+                    onClick={async () => {
                       localStorage.setItem("apk_version", apkVersionInput);
                       localStorage.setItem("apk_build", apkBuildInput);
                       localStorage.setItem("apk_filename", apkFilenameInput);
                       localStorage.setItem("apk_size", apkSizeInput);
-                      setSuccessMsg("Konfigurasi APK berhasil dinamakan dan disimpan ke sistem! Tautan unduhan di Beranda siap diakses para guru.");
+                      try {
+                        await setDoc(doc(db, "settings", "apk"), {
+                          version: apkVersionInput,
+                          build: apkBuildInput,
+                          filename: apkFilenameInput,
+                          size: apkSizeInput
+                        }, { merge: true });
+                        setSuccessMsg("Konfigurasi APK berhasil disimpan ke Firebase dan dipublikasikan! Tautan unduhan di Beranda siap diakses para guru.");
+                      } catch (err: any) {
+                        console.error("Failed to sync APK to Firestore:", err);
+                        setSuccessMsg("Konfigurasi APK berhasil disimpan secara lokal.");
+                      }
                     }}
                     className="bg-emerald-800 hover:bg-emerald-700 text-white text-xs font-black py-2.5 px-6 rounded-xl shadow transition-all cursor-pointer border border-emerald-900"
                   >

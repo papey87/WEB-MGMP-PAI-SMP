@@ -1,4 +1,6 @@
 import React, { useState, useEffect } from "react";
+import { collection, onSnapshot, setDoc, doc, updateDoc } from "firebase/firestore";
+import { db } from "../lib/firebase";
 import { MGMPEvent } from "../types";
 import { 
   Calendar, 
@@ -125,17 +127,30 @@ export default function KegiatanTab() {
   } | null>(null);
 
   useEffect(() => {
-    const saved = localStorage.getItem("mgmp_pai_events");
-    if (saved) {
-      try {
-        setEvents(JSON.parse(saved));
-      } catch (e) {
+    const colRef = collection(db, "events");
+    const unsub = onSnapshot(colRef, async (querySnap) => {
+      if (!querySnap.empty) {
+        const list: MGMPEvent[] = [];
+        querySnap.forEach((docSnap) => {
+          list.push({ id: docSnap.id, ...docSnap.data() } as any);
+        });
+        list.sort((a, b) => a.id.localeCompare(b.id));
+        setEvents(list);
+        localStorage.setItem("mgmp_pai_events", JSON.stringify(list));
+      } else {
+        // Seed if empty
         setEvents(INITIAL_EVENTS);
+        localStorage.setItem("mgmp_pai_events", JSON.stringify(INITIAL_EVENTS));
+        for (const ev of INITIAL_EVENTS) {
+          try {
+            await setDoc(doc(db, "events", ev.id), ev);
+          } catch (e) {
+            console.error("Error seeding event:", ev.id, e);
+          }
+        }
       }
-    } else {
-      setEvents(INITIAL_EVENTS);
-      localStorage.setItem("mgmp_pai_events", JSON.stringify(INITIAL_EVENTS));
-    }
+    });
+    return () => unsub();
   }, []);
 
   const handleOpenRegister = (event: MGMPEvent) => {
@@ -165,6 +180,13 @@ export default function KegiatanTab() {
       if (ev.id === registerEvent.id) {
         const newCount = ev.registeredCount + 1;
         const newStatus = newCount >= ev.quota ? "Penuh" as const : ev.status;
+        
+        // Push update to Firestore
+        updateDoc(doc(db, "events", ev.id), {
+          registeredCount: newCount,
+          status: newStatus
+        }).catch((err) => console.error("Failed to sync event registration to Firestore:", err));
+
         return { ...ev, registeredCount: newCount, status: newStatus };
       }
       return ev;
