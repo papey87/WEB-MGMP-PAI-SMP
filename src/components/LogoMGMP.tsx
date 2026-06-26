@@ -1,6 +1,6 @@
 import React from "react";
 // @ts-ignore
-import logoImg from "../assets/images/mgmp_logo_1782303044413.jpg";
+import logoImg from "../assets/images/logo_mgmp.jpg";
 
 interface LogoMGMPProps {
   className?: string;
