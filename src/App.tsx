@@ -458,8 +458,8 @@ export default function App() {
                 </h3>
               </div>
               <p className="text-xs text-slate-400 leading-relaxed max-w-sm">
-                Asosiasi Musyawarah Guru Mata Pelajaran Pendidikan Agama Islam Sekolah Menengah Pertama Kabupaten Subang. 
-                Forum silaturahim pendidik untuk merawat akidah mutawashith (moderat) bermanhaj rahmatan lil 'alamin.
+               Musyawarah Guru Mata Pelajaran Pendidikan Agama Islam Sekolah Menengah Pertama Kabupaten Subang. 
+                Forum silaturahim GPAI untuk merawat akidah mutawashith (moderat) bermanhaj rahmatan lil 'alamin.
               </p>
               <p className="text-xs text-slate-500 font-medium">
                 Sinergi • Berbagi • Menginspirasi • Berakhlak Mulia
@@ -490,13 +490,13 @@ export default function App() {
 
             {/* Footer column 3: Contact & Sekretariat */}
             <div className="space-y-4">
-              <h4 className="text-xs font-bold text-white uppercase tracking-wider">Sekretariat Bersama</h4>
+              <h4 className="text-xs font-bold text-white uppercase tracking-wider">Sekretariat</h4>
               <p className="text-xs text-slate-400 leading-relaxed">
-                Gedung Pusat Kegiatan Guru (PKG) Dinas Pendidikan Kabupaten Subang, Jawa Barat, Indonesia.
+                SMP Negeri 6 Subang, Jl. Otto Iskandardinata Wesel-Subang Jawa Barat, Indonesia.
               </p>
               <div className="pt-2 text-[11px] text-slate-500">
                 <p>Email: sekretariatan.mgmppaisubang@gmail.com</p>
-                <p>Jam kerja: Senin - Sabtu 08.00 - 15.00 WIB</p>
+                <p>Jam kerja: Senin - Jumat 08.00 - 14.00 WIB</p>
               </div>
             </div>
 
@@ -505,10 +505,10 @@ export default function App() {
           {/* Under footer license line */}
           <div className="pt-5 mt-5 border-t border-slate-800 text-center text-xs text-slate-500 flex flex-col sm:flex-row items-center justify-between gap-4">
             <p className="font-medium">
-              &copy; {new Date().getFullYear()} Portal MGMP PAI SMP. Hak Cipta Dilindungi Undang-Undang.
+              &copy; {new Date().getFullYear()} Portal MGMP PAI SMP Kab. Subang. Hak Cipta Dilindungi Undang-Undang.
             </p>
             <p className="text-[10px] text-emerald-600 bg-emerald-900/20 px-3 py-1 rounded-full border border-emerald-900/30">
-              🇮🇩 Teruji & Didukung oleh Kementerian Agama Republik Indonesia
+              🇮🇩 Didukung oleh Dinas Pendidikan Kabupaten Subang dan Kementerian Agama Kabupaten Subang
             </p>
           </div>
         </div>
