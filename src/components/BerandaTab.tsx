@@ -65,6 +65,7 @@ export default function BerandaTab({ news, onSelectNews, onChangeTab, articles =
   const [apkBuild, setApkBuild] = useState(() => localStorage.getItem("apk_build") || "Build 2026/06");
   const [apkFilename, setApkFilename] = useState(() => localStorage.getItem("apk_filename") || "mgmp-pai-subang-v12.apk");
   const [apkSize, setApkSize] = useState(() => localStorage.getItem("apk_size") || "24.8 MB");
+  const [apkDownloadUrl, setApkDownloadUrl] = useState(() => localStorage.getItem("apk_download_url") || "");
 
   useEffect(() => {
     const docRef = doc(db, "settings", "apk");
@@ -86,6 +87,10 @@ export default function BerandaTab({ news, onSelectNews, onChangeTab, articles =
         if (data.size) {
           setApkSize(data.size);
           localStorage.setItem("apk_size", data.size);
+        }
+        if (data.downloadUrl) {
+          setApkDownloadUrl(data.downloadUrl);
+          localStorage.setItem("apk_download_url", data.downloadUrl);
         }
       }
     });
@@ -127,6 +132,16 @@ export default function BerandaTab({ news, onSelectNews, onChangeTab, articles =
     return () => unsub();
   }, []);
 
+  const triggerActualDownload = () => {
+    const url = apkDownloadUrl || `/uploads/${apkFilename}`;
+    const link = document.createElement("a");
+    link.href = url;
+    link.setAttribute("download", apkFilename);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   const startApkDownload = () => {
     if (dlState === "downloading") return;
     setDlState("downloading");
@@ -136,11 +151,15 @@ export default function BerandaTab({ news, onSelectNews, onChangeTab, articles =
         if (prev >= 100) {
           clearInterval(timer);
           setDlState("success");
+          
+          // Trigger actual download
+          triggerActualDownload();
+          
           return 100;
         }
         return prev + 10;
       });
-    }, 200);
+    }, 150);
   };
 
   const rotateQuote = () => {
@@ -516,24 +535,34 @@ export default function BerandaTab({ news, onSelectNews, onChangeTab, articles =
                 )}
 
                 {dlState === "success" && (
-                  <div className="space-y-3 p-2 text-center animate-fade-in-up">
+                  <div className="space-y-4 p-2 text-center animate-fade-in-up">
                     <div className="inline-flex p-3 bg-emerald-100 text-emerald-700 rounded-full">
                       <Check className="w-8 h-8" />
                     </div>
                     <h4 className="text-sm font-black text-slate-800">Unduhan APK Berhasil Dimulai!</h4>
                     <p className="text-xs text-slate-500 max-w-md mx-auto leading-relaxed font-semibold">
-                      Berkas <strong>{apkFilename}</strong> telah diekstraksi. Jika unduhan tidak otomatis berjalan, silakan tekan tombol di bawah.
+                      Berkas <strong>{apkFilename}</strong> sedang diunduh. Jika unduhan tidak otomatis berjalan, silakan klik tombol di bawah untuk mengunduh secara manual.
                     </p>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setDlState("idle");
-                        setDlProgress(0);
-                      }}
-                      className="text-xs text-emerald-600 hover:text-emerald-750 underline font-extrabold cursor-pointer"
-                    >
-                      Unduh Ulang Berkas APK
-                    </button>
+                    <div className="flex flex-col items-center gap-2 pt-2">
+                      <button
+                        type="button"
+                        onClick={triggerActualDownload}
+                        className="bg-emerald-600 hover:bg-emerald-750 text-white px-5 py-2.5 rounded-xl text-xs font-black shadow-md transition-all cursor-pointer inline-flex items-center gap-1.5"
+                      >
+                        <Download className="w-4 h-4" />
+                        Mulai Unduh Manual
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setDlState("idle");
+                          setDlProgress(0);
+                        }}
+                        className="text-[10px] text-slate-500 hover:text-slate-700 underline font-extrabold cursor-pointer mt-1"
+                      >
+                        Kembali / Reset Status
+                      </button>
+                    </div>
                   </div>
                 )}
               </div>

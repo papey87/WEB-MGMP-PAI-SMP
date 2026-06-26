@@ -70,7 +70,8 @@ import {
   MoveUp,
   MoveDown,
   PencilLine,
-  LayoutGrid
+  LayoutGrid,
+  RefreshCw
 } from "lucide-react";
 
 // For error logging wrapper
@@ -307,6 +308,9 @@ export default function AdminTab({ onLogout }: AdminTabProps = {}) {
   const [apkFilenameInput, setApkFilenameInput] = useState(() => localStorage.getItem("apk_filename") || "mgmp-pai-subang-v12.apk");
   const [apkSizeInput, setApkSizeInput] = useState(() => localStorage.getItem("apk_size") || "24.8 MB");
   const [apkDataInput, setApkDataInput] = useState(() => localStorage.getItem("apk_data") || "");
+  const [apkDownloadUrlInput, setApkDownloadUrlInput] = useState(() => localStorage.getItem("apk_download_url") || "");
+  const [apkFile, setApkFile] = useState<File | null>(null);
+  const [isUploadingApk, setIsUploadingApk] = useState(false);
 
   // Firebase configuration management states
   const [firebaseApiKey, setFirebaseApiKey] = useState(() => {
@@ -603,6 +607,10 @@ export default function AdminTab({ onLogout }: AdminTabProps = {}) {
         if (data.filename !== undefined) setApkFilenameInput(data.filename);
         if (data.size !== undefined) setApkSizeInput(data.size);
         if (data.data !== undefined) setApkDataInput(data.data);
+        if (data.downloadUrl !== undefined) {
+          setApkDownloadUrlInput(data.downloadUrl);
+          localStorage.setItem("apk_download_url", data.downloadUrl);
+        }
       }
     });
 
@@ -2420,13 +2428,23 @@ export default function AdminTab({ onLogout }: AdminTabProps = {}) {
                       placeholder="Contoh: 24.8 MB"
                     />
                   </div>
+                  <div className="space-y-1.5 sm:col-span-2">
+                    <label className="font-extrabold text-[11px] text-slate-500 block">Tautan Unduhan Langsung APK (Ditentukan Otomatis / Bisa Kustom)</label>
+                    <input 
+                      type="text" 
+                      value={apkDownloadUrlInput}
+                      onChange={(e) => setApkDownloadUrlInput(e.target.value)}
+                      className="w-full px-3 py-2 text-xs sm:text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-1 focus:ring-emerald-700 text-slate-800 font-mono text-xs"
+                      placeholder="Contoh: /uploads/mgmp-app.apk atau link Google Drive / Dropbox"
+                    />
+                  </div>
                 </div>
 
                 {/* Upload Section */}
                 <div className="space-y-2 p-5 bg-emerald-50/50 rounded-2xl border border-emerald-100 flex flex-col items-center">
                   <Smartphone className="w-8 h-8 text-emerald-800 mb-1 animate-pulse" />
                   <span className="font-black text-xs text-slate-700">Unggah Berkas APK Baru</span>
-                  <p className="text-[10px] text-slate-400 text-center max-w-sm mt-0.5 leading-relaxed font-semibold">Pilih berkas .apk langsung dari komputer Anda. Sistem akan mengalkulasi ukuran berkas dan menyiapkan tautan unduhan otomatis.</p>
+                  <p className="text-[10px] text-slate-400 text-center max-w-sm mt-0.5 leading-relaxed font-semibold">Pilih berkas .apk langsung dari komputer Anda. Sistem akan mengunggah berkas tersebut ke server dan menghasilkan tautan unduhan otomatis secara real-time.</p>
                   
                   <input 
                     type="file" 
@@ -2434,42 +2452,94 @@ export default function AdminTab({ onLogout }: AdminTabProps = {}) {
                     onChange={(e) => {
                       const file = e.target.files?.[0];
                       if (file) {
+                        setApkFile(file);
                         setApkFilenameInput(file.name);
                         const fileMb = (file.size / (1024 * 1024)).toFixed(1) + " MB";
                         setApkSizeInput(fileMb);
-                        
-                        // Simulate upload progress
-                        setSuccessMsg("Berkas APK \"" + file.name + "\" (" + fileMb + ") berhasil diparsing dan disiapkan!");
+                        setSuccessMsg("Berkas APK \"" + file.name + "\" (" + fileMb + ") siap diunggah. Klik tombol Simpan di bawah untuk memulai proses pengunggahan ke server.");
                       }
                     }}
                     className="mt-3 text-xs text-slate-500 file:mr-3 file:py-1.5 file:px-3 file:rounded-xl file:border-0 file:text-[10px] file:font-black file:bg-emerald-800 file:text-white hover:file:bg-emerald-700 cursor-pointer"
                   />
+                  {apkFile && (
+                    <div className="mt-2 text-xs text-emerald-800 font-bold bg-white px-3 py-1 rounded-full border border-emerald-100">
+                      📂 File Terpilih: {apkFile.name} ({apkSizeInput})
+                    </div>
+                  )}
                 </div>
 
                 <div className="flex justify-end pt-3">
                   <button
                     type="button"
+                    disabled={isUploadingApk}
                     onClick={async () => {
+                      setErrorMsg("");
+                      setSuccessMsg("");
+                      let finalDownloadUrl = apkDownloadUrlInput;
+
+                      if (apkFile) {
+                        setIsUploadingApk(true);
+                        setSuccessMsg("Memulai pengunggahan berkas APK (" + apkSizeInput + ")... Mohon tunggu...");
+                        try {
+                          const res = await fetch("/api/upload-apk", {
+                            method: "POST",
+                            headers: {
+                              "Content-Type": "application/octet-stream",
+                              "X-Filename": apkFilenameInput,
+                            },
+                            body: apkFile,
+                          });
+
+                          if (!res.ok) {
+                            const errData = await res.json();
+                            throw new Error(errData.error || "Gagal mengunggah berkas APK ke server.");
+                          }
+
+                          const data = await res.json();
+                          finalDownloadUrl = data.downloadUrl;
+                          setApkDownloadUrlInput(data.downloadUrl);
+                          localStorage.setItem("apk_download_url", data.downloadUrl);
+                        } catch (err: any) {
+                          console.error("Upload failed:", err);
+                          setErrorMsg("Gagal mengunggah APK: " + err.message);
+                          setIsUploadingApk(false);
+                          return;
+                        }
+                        setIsUploadingApk(false);
+                      }
+
                       localStorage.setItem("apk_version", apkVersionInput);
                       localStorage.setItem("apk_build", apkBuildInput);
                       localStorage.setItem("apk_filename", apkFilenameInput);
                       localStorage.setItem("apk_size", apkSizeInput);
+
                       try {
                         await setDoc(doc(db, "settings", "apk"), {
                           version: apkVersionInput,
                           build: apkBuildInput,
                           filename: apkFilenameInput,
-                          size: apkSizeInput
+                          size: apkSizeInput,
+                          downloadUrl: finalDownloadUrl
                         }, { merge: true });
-                        setSuccessMsg("Konfigurasi APK berhasil disimpan ke Firebase dan dipublikasikan! Tautan unduhan di Beranda siap diakses para guru.");
+                        setSuccessMsg("Konfigurasi dan berkas APK berhasil disimpan ke Firebase dan dipublikasikan! Tautan unduhan di Beranda siap diakses para guru.");
+                        setApkFile(null); // Reset file selection after successful save
                       } catch (err: any) {
                         console.error("Failed to sync APK to Firestore:", err);
-                        setSuccessMsg("Konfigurasi APK berhasil disimpan secara lokal.");
+                        setErrorMsg("Gagal menyimpan metadata APK ke Firebase: " + err.message);
                       }
                     }}
-                    className="bg-emerald-800 hover:bg-emerald-700 text-white text-xs font-black py-2.5 px-6 rounded-xl shadow transition-all cursor-pointer border border-emerald-900"
+                    className={`bg-emerald-800 hover:bg-emerald-700 text-white text-xs font-black py-2.5 px-6 rounded-xl shadow transition-all cursor-pointer border border-emerald-900 flex items-center gap-2 ${
+                      isUploadingApk ? "opacity-50 cursor-not-allowed" : ""
+                    }`}
                   >
-                    Simpan & Publikasikan APK
+                    {isUploadingApk ? (
+                      <>
+                        <RefreshCw className="w-4 h-4 animate-spin" />
+                        Mengunggah APK...
+                      </>
+                    ) : (
+                      "Simpan & Publikasikan APK"
+                    )}
                   </button>
                 </div>
               </div>

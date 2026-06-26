@@ -1,5 +1,6 @@
 import express from "express";
 import path from "path";
+import fs from "fs";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI } from "@google/genai";
 import dotenv from "dotenv";
@@ -10,6 +11,42 @@ const app = express();
 const PORT = 3000;
 
 app.use(express.json());
+
+// Ensure upload directory exists
+const uploadDir = path.join(process.cwd(), "uploads");
+if (!fs.existsSync(uploadDir)) {
+  fs.mkdirSync(uploadDir, { recursive: true });
+}
+
+// Serve the uploads directory statically
+app.use("/uploads", express.static(uploadDir));
+
+// Route to handle APK file uploads as a raw octet-stream
+app.post(
+  "/api/upload-apk",
+  express.raw({ type: "application/octet-stream", limit: "150mb" }),
+  (req, res) => {
+    try {
+      const filename = (req.headers["x-filename"] as string) || "mgmp-app.apk";
+      // Sanitize the filename to prevent directory traversal
+      const safeFilename = path.basename(filename);
+      const targetPath = path.join(uploadDir, safeFilename);
+
+      if (!req.body || req.body.length === 0) {
+        return res.status(400).json({ error: "Isi berkas kosong atau tidak valid." });
+      }
+
+      fs.writeFileSync(targetPath, req.body);
+      console.log(`Successfully saved APK to ${targetPath}`);
+
+      const downloadUrl = `/uploads/${safeFilename}`;
+      res.json({ success: true, downloadUrl, filename: safeFilename });
+    } catch (error: any) {
+      console.error("Error writing APK file:", error);
+      res.status(500).json({ error: error.message || "Gagal menyimpan berkas APK di server." });
+    }
+  }
+);
 
 // Initialize Gemini API
 const ai = new GoogleGenAI({
