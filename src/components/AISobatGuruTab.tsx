@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from "react";
-import { supabase } from "../lib/supabase";
+import { db, auth } from "../lib/firebase";
+import { collection, addDoc, query, where, getDocs } from "firebase/firestore";
 import { 
   Send, 
   Sparkles, 
@@ -96,20 +97,19 @@ export default function AISobatGuruTab({ onShareToArticles }: AISobatGuruTabProp
     setFoundTeacherInfo(null);
 
     try {
-      // Query users table by username
-      const { data: users, error: queryError } = await supabase
-        .from('users')
-        .select('*')
-        .eq('username', usernameTrimmed);
-
-      if (queryError) throw queryError;
-
+      const teachersRef = collection(db, "users");
+      
+      // Query by username
+      const q = query(teachersRef, where("username", "==", usernameTrimmed));
+      const querySnapshot = await getDocs(q);
+      
       let matchDoc: any = null;
-      if (users && users.length > 0) {
+      if (!querySnapshot.empty) {
         // Find matching document where password matches
-        for (const user of users) {
-          if (user.password === passwordTrimmed) {
-            matchDoc = user;
+        for (const docSnap of querySnapshot.docs) {
+          const d = docSnap.data();
+          if (d.password === passwordTrimmed) {
+            matchDoc = { id: docSnap.id, ...d };
             break;
           }
         }
@@ -117,9 +117,9 @@ export default function AISobatGuruTab({ onShareToArticles }: AISobatGuruTabProp
 
       if (matchDoc) {
         // Check status_pembayaran or iuran_bulanan fields
-        const isPaid = matchDoc.status_pembayaran === "Lunas" ||
-                       matchDoc.status_pembayaran === "Aktif" ||
-                       matchDoc.iuran_bulanan === "Lunas" ||
+        const isPaid = matchDoc.status_pembayaran === "Lunas" || 
+                       matchDoc.status_pembayaran === "Aktif" || 
+                       matchDoc.iuran_bulanan === "Lunas" || 
                        matchDoc.iuran_bulanan === "Aktif" ||
                        matchDoc.iuranStatus === "Lunas";
 
@@ -204,20 +204,18 @@ export default function AISobatGuruTab({ onShareToArticles }: AISobatGuruTabProp
       const totalTokensCount = promptTokensCount + responseTokensCount;
 
       try {
-        await supabase
-          .from('ai_interactions')
-          .insert({
-            prompt: textToSend,
-            response: responseText,
-            prompt_tokens: promptTokensCount,
-            response_tokens: responseTokensCount,
-            total_tokens: totalTokensCount,
-            user_email: verifiedTeacher?.email || "Guru-Anonim@mgmp.or.id",
-            timestamp: new Date().toISOString(),
-            date_string: new Date().toISOString().split("T")[0] // YYYY-MM-DD format for easy Recharts indexing
-          });
+        await addDoc(collection(db, "ai-interactions"), {
+          prompt: textToSend,
+          response: responseText,
+          promptTokens: promptTokensCount,
+          responseTokens: responseTokensCount,
+          totalTokens: totalTokensCount,
+          userEmail: auth.currentUser?.email || "Guru-Anonim@mgmp.or.id",
+          timestamp: new Date().toISOString(),
+          dateString: new Date().toISOString().split("T")[0] // YYYY-MM-DD format for easy Recharts indexing
+        });
       } catch (logErr) {
-        console.warn("Failed to write AI interaction log to Supabase:", logErr);
+        console.warn("Failed to write AI interaction log to Firestore:", logErr);
       }
 
       const modelMsg: ChatMessage = {

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
-import { useLayoutData, useAnnouncementData } from "../contexts/SupabaseContext";
+import { doc, onSnapshot, setDoc } from "firebase/firestore";
+import { db } from "../lib/firebase";
 import { NewsItem, ArticleItem } from "../types";
 import SiladikDashboard from "./SiladikDashboard";
 import { 
@@ -100,8 +101,76 @@ export default function BerandaTab({ news, onSelectNews, onChangeTab, articles =
       });
   }, []);
 
-  const { layoutConfig } = useLayoutData();
+  const [layoutConfig, setLayoutConfig] = useState(() => {
+    try {
+      const saved = localStorage.getItem("custom_layout_config");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed.homeSections) return parsed;
+      }
+    } catch (e) {}
+    return {
+      homeSections: [
+        { id: "hero", label: "Hero Banner", visible: true, order: 1, title: "", subtitle: "", description: "", badgeText: "" },
+        { id: "siladik", label: "Sistem Informasi SILADIK", visible: true, order: 2, title: "" },
+        { id: "advice", label: "Kolom Berbagi Nasihat / Tulisan Guru", visible: true, order: 3, title: "", description: "" },
+        { id: "news_quote", label: "Berita, Pengumuman & Ruang Inspirasi", visible: true, order: 4, title: "", description: "", quoteTitle: "", quoteDescription: "" }
+      ],
+      customSections: [] as any[]
+    };
+  });
 
+  useEffect(() => {
+    const unsub = onSnapshot(doc(db, "settings", "layout"), (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        setLayoutConfig((prev) => {
+          const updated = {
+            ...prev,
+            homeSections: data.homeSections || prev.homeSections,
+            customSections: data.customSections || []
+          };
+          try {
+            const saved = localStorage.getItem("custom_layout_config");
+            let merged = updated;
+            if (saved) {
+              const parsed = JSON.parse(saved);
+              merged = { ...parsed, ...updated };
+            }
+            localStorage.setItem("custom_layout_config", JSON.stringify(merged));
+          } catch (e) {
+            console.error("Failed to merge layout config in BerandaTab.tsx:", e);
+          }
+          return updated;
+        });
+      } else {
+        // Seed default settings to Firestore if layout doc is empty / does not exist
+        const defaultLayout = {
+          tabs: [
+            { id: "beranda", label: "Beranda", visible: true },
+            { id: "profil", label: "Profil MGMP", visible: true },
+            { id: "informasi", label: "Informasi", visible: true },
+            { id: "kegiatan", label: "Agenda Kegiatan", visible: true },
+            { id: "perangkat", label: "Perangkat Ajar", visible: true },
+            { id: "artikel", label: "Artikel", visible: true },
+            { id: "ai-sobat", label: "Tanya AI Sobat Guru", visible: true }
+          ],
+          homeSections: [
+            { id: "hero", label: "Hero Banner", visible: true, order: 1, title: "", subtitle: "", description: "", badgeText: "" },
+            { id: "siladik", label: "Sistem Informasi SILADIK", visible: true, order: 2, title: "" },
+            { id: "advice", label: "Kolom Berbagi Nasihat / Tulisan Guru", visible: true, order: 3, title: "", description: "" },
+            { id: "news_quote", label: "Berita, Pengumuman & Ruang Inspirasi", visible: true, order: 4, title: "", description: "", quoteTitle: "", quoteDescription: "" }
+          ],
+          customSections: []
+        };
+        setDoc(doc(db, "settings", "layout"), defaultLayout)
+          .catch((err) => console.error("Error seeding default layout doc in BerandaTab:", err));
+      }
+    }, (err) => {
+      console.warn("Layout listener failed in BerandaTab.tsx:", err);
+    });
+    return () => unsub();
+  }, []);
 
   const triggerActualDownload = () => {
     const url = apkDownloadUrl || `/uploads/${apkFilename}`;

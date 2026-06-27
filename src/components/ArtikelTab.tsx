@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
-import { useArticlesData } from "../contexts/SupabaseContext";
+import { collection, addDoc, onSnapshot, query, orderBy, serverTimestamp } from "firebase/firestore";
+import { db } from "../lib/firebase";
 import { ArticleItem } from "../types";
 import { 
   FileText, 
@@ -20,6 +21,24 @@ import {
   X
 } from "lucide-react";
 
+enum OperationType {
+  CREATE = 'create',
+  UPDATE = 'update',
+  DELETE = 'delete',
+  LIST = 'list',
+  GET = 'get',
+  WRITE = 'write',
+}
+
+function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
+  const errInfo = {
+    error: error instanceof Error ? error.message : String(error),
+    operationType,
+    path
+  };
+  console.error('Firestore Error: ', JSON.stringify(errInfo));
+  throw new Error(JSON.stringify(errInfo));
+}
 
 // Initial seed articles in Indonesian to make the screen look populated and interesting on first load
 export const SEED_ARTICLES: ArticleItem[] = [
@@ -69,14 +88,14 @@ interface ArtikelTabProps {
   onClearPreset?: () => void;
 }
 
-export default function ArtikelTab({
-  selectedArticle: propSelectedArticle,
+export default function ArtikelTab({ 
+  selectedArticle: propSelectedArticle, 
   setSelectedArticle: propSetSelectedArticle,
   initialFormOpen,
   formPreset,
   onClearPreset
 }: ArtikelTabProps = {}) {
-  const { articles, addArticle } = useArticlesData();
+  const [articles, setArticles] = useState<ArticleItem[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [localSelectedArticle, setLocalSelectedArticle] = useState<ArticleItem | null>(null);
   const [isFormOpen, setIsFormOpen] = useState(initialFormOpen ?? false);
@@ -129,6 +148,27 @@ export default function ArtikelTab({
   const [submitSuccess, setSubmitSuccess] = useState(false);
   const [submitError, setSubmitError] = useState("");
 
+  // Load articles from Firestore in real-time
+  useEffect(() => {
+    const q = query(collection(db, "articles"), orderBy("createdAt", "desc"));
+    const unsub = onSnapshot(q, (snap) => {
+      const list: ArticleItem[] = [];
+      snap.forEach((doc) => {
+        list.push({ id: doc.id, ...doc.data() } as ArticleItem);
+      });
+      // Fallback to seed articles if Firestore collection is empty
+      if (list.length > 0) {
+        setArticles(list);
+      } else {
+        setArticles(SEED_ARTICLES);
+      }
+    }, (err) => {
+      console.warn("Firestore listen to articles failed, using seed data:", err);
+      setArticles(SEED_ARTICLES);
+    });
+
+    return () => unsub();
+  }, []);
 
   // Handle article submission
   const handleSubmit = async (e: React.FormEvent) => {
@@ -148,10 +188,11 @@ export default function ArtikelTab({
         asalSekolah: formData.asalSekolah.trim(),
         tanggalPenulisan: formData.tanggalPenulisan,
         judul: formData.judul.trim(),
-        isi: formData.isi.trim()
+        isi: formData.isi.trim(),
+        createdAt: serverTimestamp()
       };
 
-      await addArticle(payload);
+      await addDoc(collection(db, "articles"), payload);
 
       setSubmitSuccess(true);
       setFormData({
@@ -166,7 +207,7 @@ export default function ArtikelTab({
       setTimeout(() => setSubmitSuccess(false), 4000);
     } catch (err) {
       setSubmitError("Gagal mengirimkan artikel. Silakan coba kembali beberapa saat lagi.");
-      console.error('Error adding article:', err);
+      handleFirestoreError(err, OperationType.WRITE, "articles");
     } finally {
       setIsSubmitting(false);
     }

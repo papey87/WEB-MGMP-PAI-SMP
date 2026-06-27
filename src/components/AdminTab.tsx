@@ -1,7 +1,27 @@
 import React, { useState, useEffect } from "react";
-import { supabase } from "../lib/supabase";
+import { 
+  collection, 
+  getDocs, 
+  addDoc, 
+  updateDoc, 
+  deleteDoc, 
+  doc, 
+  onSnapshot, 
+  query, 
+  orderBy, 
+  writeBatch,
+  setDoc
+} from "firebase/firestore";
+import { 
+  signInWithPopup, 
+  GoogleAuthProvider, 
+  signOut, 
+  onAuthStateChanged,
+  User
+} from "firebase/auth";
+import { db, auth } from "../lib/firebase";
 import { NewsItem } from "../types";
-import type { UserRow, NewsRow, AIInteractionRow, SettingsRow } from "../lib/supabase";
+import { seedTeachersIfEmpty, TeacherData } from "../lib/firebaseSeeder";
 import { 
   ResponsiveContainer, 
   AreaChart, 
@@ -65,16 +85,21 @@ enum OperationType {
   WRITE = 'write',
 }
 
-function handleSupabaseError(error: unknown, operationType: OperationType, path: string | null) {
+function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
   const errInfo = {
     error: error instanceof Error ? error.message : String(error),
+    authInfo: {
+      userId: auth.currentUser?.uid,
+      email: auth.currentUser?.email,
+      emailVerified: auth.currentUser?.emailVerified,
+    },
     operationType,
     path
   };
-  console.error('Supabase Error log to console: ', JSON.stringify(errInfo));
+  console.error('Firestore Error log to console: ', JSON.stringify(errInfo));
 }
 
-// Initial fallback news items to seed if Supabase 'news' is empty
+// Initial fallback news items to seed if Firestore 'news' is empty
 const INITIAL_NEWS: Omit<NewsItem, "id">[] = [
   {
     title: "Workshop Sinkronisasi Asesmen Kurikulum Merdeka PAI SMP Fase D",
@@ -99,6 +124,7 @@ interface AdminTabProps {
 }
 
 export default function AdminTab({ onLogout }: AdminTabProps = {}) {
+  const [user, setUser] = useState<User | null>(null);
   const [isSimulated, setIsSimulated] = useState(false);
   const [simulatedEmail, setSimulatedEmail] = useState("");
   const [loading, setLoading] = useState(true);
@@ -108,12 +134,12 @@ export default function AdminTab({ onLogout }: AdminTabProps = {}) {
   const [emailInput, setEmailInput] = useState("feri.gunawan87@gmail.com");
 
   // DB collections state
-  const [teachers, setTeachers] = useState<UserRow[]>([]);
+  const [teachers, setTeachers] = useState<TeacherData[]>([]);
   const [news, setNews] = useState<NewsItem[]>([]);
   const [aiLogs, setAiLogs] = useState<any[]>([]);
   
   // Navigation inside Admin Panel
-  const [adminSubTab, setAdminSubTab] = useState<"dashboard" | "berita" | "guru" | "api_monitoring" | "profil_mgmp" | "kelola_apk" | "kelola_pemberitahuan" | "kelola_tata_letak">("dashboard");
+  const [adminSubTab, setAdminSubTab] = useState<"dashboard" | "berita" | "guru" | "api_monitoring" | "profil_mgmp" | "kelola_apk" | "integrasi_firebase" | "kelola_pemberitahuan" | "kelola_tata_letak">("dashboard");
 
   // Layout & Sections management state
   const [layoutTabs, setLayoutTabs] = useState([
@@ -288,6 +314,79 @@ export default function AdminTab({ onLogout }: AdminTabProps = {}) {
   const [isUploadingApk, setIsUploadingApk] = useState(false);
   const [copiedApkLink, setCopiedApkLink] = useState(false);
 
+  // Firebase configuration management states
+  const [firebaseApiKey, setFirebaseApiKey] = useState(() => {
+    try {
+      const saved = localStorage.getItem("custom_firebase_config");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        return parsed.apiKey || "AIzaSyCp4sLgQ00xWa3BBvFRJs1AEnD1EytNUQc";
+      }
+    } catch (e) {}
+    return "AIzaSyCp4sLgQ00xWa3BBvFRJs1AEnD1EytNUQc";
+  });
+
+  const [firebaseProjectId, setFirebaseProjectId] = useState(() => {
+    try {
+      const saved = localStorage.getItem("custom_firebase_config");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        return parsed.projectId || "promising-card-0pnh2";
+      }
+    } catch (e) {}
+    return "promising-card-0pnh2";
+  });
+
+  const [firebaseAppId, setFirebaseAppId] = useState(() => {
+    try {
+      const saved = localStorage.getItem("custom_firebase_config");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        return parsed.appId || "1:827904139612:web:8da7d60f6e994022a16199";
+      }
+    } catch (e) {}
+    return "1:827904139612:web:8da7d60f6e994022a16199";
+  });
+
+  const [firebaseDbId, setFirebaseDbId] = useState(() => {
+    const savedDbId = localStorage.getItem("custom_firebase_db_id");
+    if (savedDbId) return savedDbId;
+    const hasCustom = localStorage.getItem("custom_firebase_config");
+    return hasCustom ? "(default)" : "ai-studio-52c3b800-b7a1-459e-af6e-315e9ae0eb3a";
+  });
+
+  const [firebaseAuthDomain, setFirebaseAuthDomain] = useState(() => {
+    try {
+      const saved = localStorage.getItem("custom_firebase_config");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        return parsed.authDomain || "promising-card-0pnh2.firebaseapp.com";
+      }
+    } catch (e) {}
+    return "promising-card-0pnh2.firebaseapp.com";
+  });
+
+  const [firebaseStorageBucket, setFirebaseStorageBucket] = useState(() => {
+    try {
+      const saved = localStorage.getItem("custom_firebase_config");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        return parsed.storageBucket || "promising-card-0pnh2.firebasestorage.app";
+      }
+    } catch (e) {}
+    return "promising-card-0pnh2.firebasestorage.app";
+  });
+
+  const [firebaseMessagingSenderId, setFirebaseMessagingSenderId] = useState(() => {
+    try {
+      const saved = localStorage.getItem("custom_firebase_config");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        return parsed.messagingSenderId || "827904139612";
+      }
+    } catch (e) {}
+    return "827904139612";
+  });
 
   // Dynamic global announcement admin states
   const [announcementText, setAnnouncementText] = useState("Segera Install Aplikasi Android Resmi Portal MGMP PAI SMP Subang! Klik di sini untuk panduan instalasi & unduh.");
@@ -321,18 +420,19 @@ export default function AdminTab({ onLogout }: AdminTabProps = {}) {
   // Allowed specific admins (as requested: Admin Only)
   const allowedAdminEmails = ["feri.gunawan87@gmail.com"];
 
-  const saveProfileToSupabase = async (
+  const saveProfileToFirestore = async (
     updatedVisi?: string,
     updatedMisi?: string[],
     updatedTujuan?: any[],
     updatedStructure?: any[]
   ) => {
     try {
-      const data: any = {};
-      if (updatedVisi !== undefined) data.visi = updatedVisi;
-      if (updatedMisi !== undefined) data.misi = updatedMisi;
-      if (updatedTujuan !== undefined) data.tujuan = updatedTujuan;
-      if (updatedStructure !== undefined) data.structure = updatedStructure;
+      const docRef = doc(db, "settings", "profile");
+      const payload: any = {};
+      if (updatedVisi !== undefined) payload.visi = updatedVisi;
+      if (updatedMisi !== undefined) payload.misi = updatedMisi;
+      if (updatedTujuan !== undefined) payload.tujuan = updatedTujuan;
+      if (updatedStructure !== undefined) payload.structure = updatedStructure;
 
       // Update local storage too as a fallback/mirror
       if (updatedVisi !== undefined) localStorage.setItem("mgmp_profile_visi", updatedVisi);
@@ -340,207 +440,246 @@ export default function AdminTab({ onLogout }: AdminTabProps = {}) {
       if (updatedTujuan !== undefined) localStorage.setItem("mgmp_profile_tujuan", JSON.stringify(updatedTujuan));
       if (updatedStructure !== undefined) localStorage.setItem("mgmp_profile_structure", JSON.stringify(updatedStructure));
 
-      const { error } = await supabase
-        .from('settings')
-        .update({ data })
-        .eq('id', 'profile');
-
-      if (error) {
-        console.error("Error saving profile settings to Supabase:", error);
-      }
+      await setDoc(docRef, payload, { merge: true });
     } catch (e) {
-      console.error("Error saving profile settings to Supabase:", e);
+      console.error("Error saving profile settings to firestore:", e);
     }
   };
 
-  // Check admin access from localStorage (admin access is controlled via localStorage in App.tsx)
+  // Check auth state trigger
   useEffect(() => {
     const savedEmail = localStorage.getItem("admin_logged_in_email");
     const savedName = localStorage.getItem("admin_logged_in_name");
-    const isSimulatedAdmin = localStorage.getItem("admin_is_simulated") === "true";
-
     if (savedEmail && allowedAdminEmails.includes(savedEmail)) {
+      setUser({
+        uid: "admin-feri-gunawan",
+        email: savedEmail,
+        displayName: savedName || "Feri Gunawan",
+        emailVerified: true
+      } as any);
       setIsSimulated(false);
-      setSimulatedEmail(savedEmail);
       setLoading(false);
-    } else if (isSimulatedAdmin) {
-      setIsSimulated(true);
-      setSimulatedEmail(savedEmail || "");
-      setLoading(false);
-    } else {
-      setLoading(false);
+      return;
     }
+
+    const unsub = onAuthStateChanged(auth, (currentUser) => {
+      if (currentUser) {
+        const email = currentUser.email || "";
+        if (allowedAdminEmails.includes(email)) {
+          setUser(currentUser);
+          setIsSimulated(false);
+        } else {
+          signOut(auth).catch(err => console.error(err));
+          setUser(null);
+          localStorage.removeItem("admin_portal_access");
+          setErrorMsg(`Akun Google (${email}) Anda tidak terdaftar sebagai administrator.`);
+        }
+      } else {
+        if (!localStorage.getItem("admin_logged_in_email")) {
+          setUser(null);
+        }
+      }
+      setLoading(false);
+    });
+
+    return () => unsub();
   }, []);
 
-  // Fetch collections when authenticated
+  // Fetch collections when logged in
   useEffect(() => {
-    const isAuthenticated = isSimulated;
+    const isAuthenticated = user || isSimulated;
     if (!isAuthenticated) return;
 
     setLoading(true);
 
-    const fetchAllData = async () => {
-      try {
-        // 1. Fetch users
-        const { data: usersData, error: usersError } = await supabase
-          .from('users')
-          .select('*')
-          .order('created_at', { ascending: false });
+    // Call seeder so that database is guaranteed to have default data also for Admin Panel
+    seedTeachersIfEmpty().catch((err) => {
+      console.error("Failed to seed initial teacher data in AdminTab:", err);
+    });
 
-        if (usersError) {
-          handleSupabaseError(usersError, OperationType.LIST, "users");
-        } else if (usersData) {
-          setTeachers(usersData as UserRow[]);
-        }
+    // 1. Subscribe to teachers database
+    const qTeachers = query(collection(db, "users"), orderBy("createdAt", "desc"));
+    const unsubTeachers = onSnapshot(qTeachers, (snap) => {
+      const list: TeacherData[] = [];
+      snap.forEach((docSnap) => {
+        list.push({ id: docSnap.id, ...docSnap.data() } as TeacherData);
+      });
+      setTeachers(list);
+    }, (err) => {
+      handleFirestoreError(err, OperationType.LIST, "users");
+    });
 
-        // 2. Fetch and seed news if empty
-        const { data: newsData, error: newsError } = await supabase
-          .from('news')
-          .select('*')
-          .order('created_at', { ascending: false });
-
-        if (newsError) {
-          handleSupabaseError(newsError, OperationType.LIST, "news");
-        } else if (newsData) {
-          if (newsData.length === 0) {
-            // Seed initial news items
-            try {
-              await supabase.from('news').insert(
-                INITIAL_NEWS.map(item => ({
-                  ...item,
-                  created_at: new Date().toISOString()
-                }))
-              );
-            } catch (e) {
-              console.error("Failed to seed initial news items", e);
-            }
-          } else {
-            setNews(newsData as NewsItem[]);
-          }
-        }
-
-        // 3. Fetch and seed AI interactions if empty
-        const { data: aiData, error: aiError } = await supabase
-          .from('ai_interactions')
-          .select('*')
-          .order('timestamp', { ascending: false });
-
-        if (aiError) {
-          handleSupabaseError(aiError, OperationType.LIST, "ai_interactions");
-        } else if (aiData) {
-          if (aiData.length === 0) {
-            // Seed realistic historical logs
-            try {
-              const today = new Date();
-              const samplePrompts = [
-                { p: "Buat RPP Akhlak Terpuji Kelas VII", r: "Rencana Pelaksanaan Pembelajaran (RPP) Akhlak Terpuji untuk kelas VII disusun menggunakan modul ajar format Kurikulum Merdeka...", pt: 180, rt: 520, daysAgo: 4, email: "feri.gunawan87@gmail.com" },
-                { p: "Harap susun 5 soal pilihan ganda tentang Hukum Bacaan Mad Kelas VIII", r: "Butir soal kuis Hukum Bacaan Mad kelas VII SMP dengan pembahasan terperinci dan kuisioner...", pt: 155, rt: 490, daysAgo: 3, email: "guru.pembelajar@mgmp.or.id" },
-                { p: "Berikan 3 ide metode pembelajaran interaktif materi Fiqih Thaharah", r: "Berikut adalah 3 metode pembelajaran interaktif: 1. Praktik Thaharah Berantai, 2. Role Playing Media, 3. Diskusi Kasus...", pt: 210, rt: 640, daysAgo: 2, email: "guru.pai.subang@gmail.com" },
-                { p: "Buat ringkasan Sejarah Daulah Umayyah Kelas VIII", r: "Ringkasan konsep penting Sejarah Daulah Umayyah di Damaskus berbasis bagan visual dan peta konsep ringkas...", pt: 230, rt: 680, daysAgo: 1, email: "feri.gunawan87@gmail.com" },
-                { p: "Tuliskan contoh soal HOTS materi zakat fitrah kelas VIII SMP", r: "Analisis studi kasus zakat fitrah untuk menguji tingkat literasi fungsional agama anak didik...", pt: 190, rt: 580, daysAgo: 0, email: "guru.pembelajar@mgmp.or.id" }
-              ];
-
-              const seedData = samplePrompts.map((pr) => {
-                const d = new Date();
-                d.setDate(today.getDate() - pr.daysAgo);
-                const dStr = d.toISOString();
-                const dateStr = dStr.split("T")[0];
-                return {
-                  prompt: pr.p,
-                  response: pr.r,
-                  prompt_tokens: pr.pt,
-                  response_tokens: pr.rt,
-                  total_tokens: pr.pt + pr.rt,
-                  user_email: pr.email,
-                  timestamp: dStr,
-                  date_string: dateStr
-                };
-              });
-
-              await supabase.from('ai_interactions').insert(seedData);
-            } catch (e) {
-              console.error("Failed to seed initial AI interaction items", e);
-            }
-          } else {
-            setAiLogs(aiData);
-          }
-        }
-
-        // 4. Fetch profile settings
-        const { data: profileData, error: profileError } = await supabase
-          .from('settings')
-          .select('data')
-          .eq('id', 'profile')
-          .single();
-
-        if (!profileError && profileData?.data) {
-          const data = profileData.data;
-          if (data.visi !== undefined) setAdminVisi(data.visi);
-          if (data.misi !== undefined) setAdminMisi(data.misi);
-          if (data.tujuan !== undefined) setAdminTujuan(data.tujuan);
-          if (data.structure !== undefined) setAdminStructure(data.structure);
-        }
-
-        // 5. Fetch APK settings from local server (independent of Supabase)
+    // 2. Subscribe and seed news collection
+    const qNews = query(collection(db, "news"), orderBy("createdAt", "desc"));
+    const unsubNews = onSnapshot(qNews, async (snap) => {
+      const list: NewsItem[] = [];
+      snap.forEach((docSnap) => {
+        list.push({ id: docSnap.id, ...docSnap.data() } as NewsItem);
+      });
+      
+      if (list.length === 0) {
+        // Seed initial news items in background
         try {
-          const res = await fetch("/api/apk-settings");
-          const data = await res.json();
-          if (data) {
-            if (data.version !== undefined) setApkVersionInput(data.version);
-            if (data.build !== undefined) setApkBuildInput(data.build);
-            if (data.filename !== undefined) setApkFilenameInput(data.filename);
-            if (data.size !== undefined) setApkSizeInput(data.size);
-            if (data.data !== undefined) setApkDataInput(data.data);
-            if (data.downloadUrl !== undefined) {
-              setApkDownloadUrlInput(data.downloadUrl);
-              localStorage.setItem("apk_download_url", data.downloadUrl);
-            }
-          }
-        } catch (err) {
-          console.warn("Failed to load local APK settings:", err);
+          const colRef = collection(db, "news");
+          const batch = writeBatch(db);
+          INITIAL_NEWS.forEach((item) => {
+            const docRef = doc(colRef);
+            batch.set(docRef, {
+              ...item,
+              createdAt: new Date().toISOString()
+            });
+          });
+          await batch.commit();
+        } catch (e) {
+          console.error("Failed to seed initial news items", e);
         }
-
-        // 6. Fetch Global Announcement settings
-        const { data: announcementData, error: announcementError } = await supabase
-          .from('settings')
-          .select('data')
-          .eq('id', 'announcement')
-          .single();
-
-        if (!announcementError && announcementData?.data) {
-          const data = announcementData.data;
-          if (data.text !== undefined) setAnnouncementText(data.text);
-          if (data.badgeText !== undefined) setAnnouncementBadgeText(data.badgeText);
-          if (data.actionType !== undefined) setAnnouncementActionType(data.actionType);
-          if (data.actionUrl !== undefined) setAnnouncementActionUrl(data.actionUrl);
-          if (data.blinking !== undefined) setAnnouncementBlinking(data.blinking);
-        }
-
-        // 7. Fetch Layout configurations
-        const { data: layoutData, error: layoutError } = await supabase
-          .from('settings')
-          .select('data')
-          .eq('id', 'layout')
-          .single();
-
-        if (!layoutError && layoutData?.data) {
-          const data = layoutData.data;
-          if (data.tabs) setLayoutTabs(data.tabs);
-          if (data.homeSections) setLayoutHomeSections(data.homeSections);
-          if (data.customSections) setLayoutCustomSections(data.customSections);
-        }
-
-        setLoading(false);
-      } catch (err) {
-        console.error("Error fetching data from Supabase:", err);
-        setLoading(false);
+      } else {
+        setNews(list);
       }
+      setLoading(false);
+    }, (err) => {
+      handleFirestoreError(err, OperationType.LIST, "news");
+      setLoading(false);
+    });
+
+    // 3. Subscribe to ai-interactions database
+    const qInteractions = query(collection(db, "ai-interactions"), orderBy("timestamp", "desc"));
+    const unsubInteractions = onSnapshot(qInteractions, async (snap) => {
+      const list: any[] = [];
+      snap.forEach((docSnap) => {
+        list.push({ id: docSnap.id, ...docSnap.data() });
+      });
+
+      if (list.length === 0) {
+        // Seed realistic historical logs
+        try {
+          const colRef = collection(db, "ai-interactions");
+          const batch = writeBatch(db);
+          
+          const today = new Date();
+          const samplePrompts = [
+            { p: "Buat RPP Akhlak Terpuji Kelas VII", r: "Rencana Pelaksanaan Pembelajaran (RPP) Akhlak Terpuji untuk kelas VII disusun menggunakan modul ajar format Kurikulum Merdeka...", pt: 180, rt: 520, daysAgo: 4, email: "feri.gunawan87@gmail.com" },
+            { p: "Harap susun 5 soal pilihan ganda tentang Hukum Bacaan Mad Kelas VIII", r: "Butir soal kuis Hukum Bacaan Mad kelas VII SMP dengan pembahasan terperinci dan kuisioner...", pt: 155, rt: 490, daysAgo: 3, email: "guru.pembelajar@mgmp.or.id" },
+            { p: "Berikan 3 ide metode pembelajaran interaktif materi Fiqih Thaharah", r: "Berikut adalah 3 metode pembelajaran interaktif: 1. Praktik Thaharah Berantai, 2. Role Playing Media, 3. Diskusi Kasus...", pt: 210, rt: 640, daysAgo: 2, email: "guru.pai.subang@gmail.com" },
+            { p: "Buat ringkasan Sejarah Daulah Umayyah Kelas VIII", r: "Ringkasan konsep penting Sejarah Daulah Umayyah di Damaskus berbasis bagan visual dan peta konsep ringkas...", pt: 230, rt: 680, daysAgo: 1, email: "feri.gunawan87@gmail.com" },
+            { p: "Tuliskan contoh soal HOTS materi zakat fitrah kelas VIII SMP", r: "Analisis studi kasus zakat fitrah untuk menguji tingkat literasi fungsional agama anak didik...", pt: 190, rt: 580, daysAgo: 0, email: "guru.pembelajar@mgmp.or.id" }
+          ];
+
+          samplePrompts.forEach((pr) => {
+            const d = new Date();
+            d.setDate(today.getDate() - pr.daysAgo);
+            const dStr = d.toISOString();
+            const dateStr = dStr.split("T")[0];
+            const docRef = doc(colRef);
+            batch.set(docRef, {
+              prompt: pr.p,
+              response: pr.r,
+              promptTokens: pr.pt,
+              responseTokens: pr.rt,
+              totalTokens: pr.pt + pr.rt,
+              userEmail: pr.email,
+              timestamp: dStr,
+              dateString: dateStr
+            });
+          });
+
+          await batch.commit();
+        } catch (e) {
+          console.error("Failed to seed initial AI interaction items", e);
+        }
+      } else {
+        setAiLogs(list);
+      }
+    }, (err) => {
+      handleFirestoreError(err, OperationType.LIST, "ai-interactions");
+    });
+
+    // 4. Subscribe to profile settings doc
+    const unsubProfile = onSnapshot(doc(db, "settings", "profile"), (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        if (data.visi !== undefined) setAdminVisi(data.visi);
+        if (data.misi !== undefined) setAdminMisi(data.misi);
+        if (data.tujuan !== undefined) setAdminTujuan(data.tujuan);
+        if (data.structure !== undefined) setAdminStructure(data.structure);
+      }
+    });
+
+    // 5. Fetch APK settings from local server (independent of Firebase)
+    const unsubApk = () => {};
+    fetch("/api/apk-settings")
+      .then(res => res.json())
+      .then(data => {
+        if (data) {
+          if (data.version !== undefined) setApkVersionInput(data.version);
+          if (data.build !== undefined) setApkBuildInput(data.build);
+          if (data.filename !== undefined) setApkFilenameInput(data.filename);
+          if (data.size !== undefined) setApkSizeInput(data.size);
+          if (data.data !== undefined) setApkDataInput(data.data);
+          if (data.downloadUrl !== undefined) {
+            setApkDownloadUrlInput(data.downloadUrl);
+            localStorage.setItem("apk_download_url", data.downloadUrl);
+          }
+        }
+      })
+      .catch(err => {
+        console.warn("Failed to load local APK settings:", err);
+      });
+
+    // 6. Subscribe to Global Announcement settings doc
+    const unsubAnnouncement = onSnapshot(doc(db, "settings", "announcement"), (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        if (data.text !== undefined) setAnnouncementText(data.text);
+        if (data.badgeText !== undefined) setAnnouncementBadgeText(data.badgeText);
+        if (data.actionType !== undefined) setAnnouncementActionType(data.actionType);
+        if (data.actionUrl !== undefined) setAnnouncementActionUrl(data.actionUrl);
+        if (data.blinking !== undefined) setAnnouncementBlinking(data.blinking);
+      }
+    });
+
+    // 7. Subscribe to Layout configurations doc
+    const unsubLayout = onSnapshot(doc(db, "settings", "layout"), (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        if (data.tabs) setLayoutTabs(data.tabs);
+        if (data.homeSections) setLayoutHomeSections(data.homeSections);
+        if (data.customSections) setLayoutCustomSections(data.customSections);
+      }
+    });
+
+    return () => {
+      unsubTeachers();
+      unsubNews();
+      unsubInteractions();
+      unsubProfile();
+      unsubApk();
+      unsubAnnouncement();
+      unsubLayout();
     };
+  }, [user, isSimulated]);
 
-    fetchAllData();
-  }, [isSimulated]);
-
-  // Admin access controllers
+  // Auth controllers
+  const handleGoogleSignIn = async () => {
+    setErrorMsg("");
+    setSuccessMsg("");
+    try {
+      const provider = new GoogleAuthProvider();
+      const result = await signInWithPopup(auth, provider);
+      const email = result.user.email || "";
+      if (!allowedAdminEmails.includes(email)) {
+        // Not actual authorized admin, we log out automatically or show alert
+        await signOut(auth);
+        setUser(null);
+        setErrorMsg(`Akun Google (${email}) Anda tidak memiliki lisensi akses administrator. Hubungi Pengurus MGMP.`);
+      } else {
+        setSuccessMsg("Selamat Datang! Login Admin berhasil dikonfirmasi.");
+      }
+    } catch (error: any) {
+      console.error("Sign in error:", error);
+      setErrorMsg("Gagal melakukan autentikasi Google Sign-In.");
+    }
+  };
 
   const handlePasscodeSignIn = (e: React.FormEvent) => {
     e.preventDefault();
@@ -574,9 +713,13 @@ export default function AdminTab({ onLogout }: AdminTabProps = {}) {
       localStorage.setItem("admin_logged_in_email", cleanEmail);
       localStorage.setItem("admin_logged_in_name", "Feri Gunawan");
       localStorage.setItem("admin_portal_access", "true");
-      localStorage.setItem("admin_is_simulated", "false");
-
-      setSimulatedEmail(cleanEmail);
+      
+      setUser({
+        uid: "admin-feri-gunawan",
+        email: cleanEmail,
+        displayName: "Feri Gunawan",
+        emailVerified: true
+      } as any);
       setIsSimulated(false);
       setSuccessMsg("Selamat Datang! Login Admin berhasil diverifikasi via Kode Akses.");
       setPasscode("");
@@ -588,12 +731,18 @@ export default function AdminTab({ onLogout }: AdminTabProps = {}) {
 
   const handleSignOut = async () => {
     try {
-      setIsSimulated(false);
-      localStorage.removeItem("admin_is_simulated");
+      if (isSimulated) {
+        setIsSimulated(false);
+        localStorage.removeItem("admin_is_simulated");
+        setSimulatedEmail("");
+      } else {
+        await signOut(auth);
+      }
       localStorage.removeItem("admin_logged_in_email");
       localStorage.removeItem("admin_logged_in_name");
+      localStorage.removeItem("admin_is_simulated");
       localStorage.removeItem("admin_portal_access");
-      setSimulatedEmail("");
+      setUser(null);
       setSuccessMsg("Anda telah sukses keluar dari sesi administrator.");
       window.dispatchEvent(new Event("storage"));
       if (onLogout) {
@@ -635,7 +784,7 @@ export default function AdminTab({ onLogout }: AdminTabProps = {}) {
     e.preventDefault();
     setErrorMsg("");
     setSuccessMsg("");
-
+    
     // Validations
     if (!newsForm.title.trim() || !newsForm.summary.trim() || !newsForm.content.trim()) {
       setErrorMsg("Semua bidang berita wajib diisi lengkap!");
@@ -650,23 +799,22 @@ export default function AdminTab({ onLogout }: AdminTabProps = {}) {
         image: newsForm.image || "https://images.unsplash.com/photo-1542281286-9e0a16bb7366?auto=format&fit=crop&q=80&w=600",
         summary: newsForm.summary,
         content: newsForm.content,
-        created_at: new Date().toISOString()
+        createdAt: new Date().toISOString()
       };
 
       if (activeNewsModal === "add") {
-        const { error } = await supabase.from('news').insert([newsDataPayload]);
-        if (error) throw error;
+        await addDoc(collection(db, "news"), newsDataPayload);
         setSuccessMsg("Artikel Berita Baru berhasil diterbitkan!");
       } else if (activeNewsModal === "edit" && newsForm.id) {
-        const { error } = await supabase.from('news').update(newsDataPayload).eq('id', newsForm.id);
-        if (error) throw error;
+        const docRef = doc(db, "news", newsForm.id);
+        await updateDoc(docRef, newsDataPayload);
         setSuccessMsg("Artikel Berita berhasil diperbarui!");
       }
-
+      
       setActiveNewsModal(null);
     } catch (err) {
-      handleSupabaseError(err, OperationType.WRITE, "news");
-      setErrorMsg("Gagal menyimpan data berita ke Supabase.");
+      handleFirestoreError(err, OperationType.WRITE, "news");
+      setErrorMsg("Gagal menyimpan data berita ke Firestore.");
     }
   };
 
@@ -675,11 +823,10 @@ export default function AdminTab({ onLogout }: AdminTabProps = {}) {
     setErrorMsg("");
     setSuccessMsg("");
     try {
-      const { error } = await supabase.from('news').delete().eq('id', id);
-      if (error) throw error;
+      await deleteDoc(doc(db, "news", id));
       setSuccessMsg("Artikel berita berhasil dihapus!");
     } catch (err) {
-      handleSupabaseError(err, OperationType.DELETE, `news/${id}`);
+      handleFirestoreError(err, OperationType.DELETE, `news/${id}`);
       setErrorMsg("Gagal menghapus berita.");
     }
   };
@@ -704,17 +851,17 @@ export default function AdminTab({ onLogout }: AdminTabProps = {}) {
     setActiveTeacherModal("add");
   };
 
-  const openEditTeacher = (item: UserRow) => {
+  const openEditTeacher = (item: TeacherData) => {
     setTeacherForm({
       id: item.id || "",
       nama: item.nama,
       nip: item.nip || "",
       nuptk: item.nuptk || "",
-      status: item.status as any,
-      komisariat: item.komisariat as any,
+      status: item.status,
+      komisariat: item.komisariat,
       sekolah: item.sekolah,
-      whatsapp: item.whatsapp || "",
-      iuranStatus: item.iuran_status || "Belum Bayar",
+      whatsapp: item.whatsapp,
+      iuranStatus: item.iuranStatus || "Belum Bayar",
       username: item.username || "",
       password: item.password || "",
       status_pembayaran: item.status_pembayaran || "Belum Bayar",
@@ -742,27 +889,60 @@ export default function AdminTab({ onLogout }: AdminTabProps = {}) {
         komisariat: teacherForm.komisariat,
         sekolah: teacherForm.sekolah,
         whatsapp: teacherForm.whatsapp,
-        iuran_status: teacherForm.iuranStatus || "Belum Bayar",
+        iuranStatus: teacherForm.iuranStatus || "Belum Bayar",
         username: teacherForm.username || "",
         password: teacherForm.password || "",
         status_pembayaran: teacherForm.status_pembayaran || "Belum Bayar",
         iuran_bulanan: teacherForm.iuran_bulanan || "Belum Bayar",
-        created_at: new Date().toISOString()
+        createdAt: new Date().toISOString()
       };
 
+      // Real Dual-Collection Mirror Sync to 'users' and 'teachers' / 'siladik-guru-pai-smp' collections!
       if (activeTeacherModal === "add") {
-        const { error } = await supabase.from('users').insert([payload]);
-        if (error) throw error;
+        // Step 1: Add to main 'users' collection
+        const mainDoc = await addDoc(collection(db, "users"), payload);
+        
+        // Step 2: Mirror also to 'teachers' and 'siladik-guru-pai-smp' for compatibility
+        try {
+          await addDoc(collection(db, "teachers"), { ...payload, mirrorId: mainDoc.id });
+          await addDoc(collection(db, "siladik-guru-pai-smp"), { ...payload, mirrorId: mainDoc.id });
+        } catch (mirrorErr) {
+          console.warn("Could not sync mirror collections on add:", mirrorErr);
+        }
+
         setSuccessMsg(`Data guru ${payload.nama} berhasil didaftarkan ke sistem!`);
       } else if (activeTeacherModal === "edit" && teacherForm.id) {
-        const { error } = await supabase.from('users').update(payload).eq('id', teacherForm.id);
-        if (error) throw error;
+        // Step 1: Update main 'users'
+        const mainRef = doc(db, "users", teacherForm.id);
+        await updateDoc(mainRef, payload);
+
+        // Step 2: Also find and update in 'teachers' & 'siladik-guru-pai-smp' collections matching the ID, mirrorId, or unique keys
+        try {
+          const teachersColSnap = await getDocs(collection(db, "teachers"));
+          teachersColSnap.forEach(async (docSnap) => {
+            const d = docSnap.data();
+            if (d.mirrorId === teacherForm.id || d.nama === payload.nama || d.nuptk === payload.nuptk) {
+              await updateDoc(doc(db, "teachers", docSnap.id), payload);
+            }
+          });
+          
+          const siliColSnap = await getDocs(collection(db, "siladik-guru-pai-smp"));
+          siliColSnap.forEach(async (docSnap) => {
+            const d = docSnap.data();
+            if (d.mirrorId === teacherForm.id || docSnap.id === teacherForm.id || d.nama === payload.nama || d.nuptk === payload.nuptk) {
+              await updateDoc(doc(db, "siladik-guru-pai-smp", docSnap.id), payload);
+            }
+          });
+        } catch (mirrorErr) {
+          console.warn("Could not sync mirror collections update: ", mirrorErr);
+        }
+
         setSuccessMsg(`Data guru ${payload.nama} berhasil diperbarui!`);
       }
 
       setActiveTeacherModal(null);
     } catch (err) {
-      handleSupabaseError(err, OperationType.WRITE, "users");
+      handleFirestoreError(err, OperationType.WRITE, "users");
       setErrorMsg("Gagal menyimpan data guru.");
     }
   };
@@ -772,37 +952,38 @@ export default function AdminTab({ onLogout }: AdminTabProps = {}) {
     setErrorMsg("");
     setSuccessMsg("");
     try {
-      const { error } = await supabase.from('users').delete().eq('id', id);
-      if (error) throw error;
-      setSuccessMsg(`Sukses menghapus data guru ${name}`);
+      // Step 1: Delete from core 'users'
+      await deleteDoc(doc(db, "users", id));
+
+      // Step 2: Also delete from 'teachers' & 'siladik-guru-pai-smp' matching mirrorId or id
+      try {
+        const teachersColSnap = await getDocs(collection(db, "teachers"));
+        teachersColSnap.forEach(async (docSnap) => {
+          const d = docSnap.data();
+          if (d.mirrorId === id || d.nama === name) {
+            await deleteDoc(doc(db, "teachers", docSnap.id));
+          }
+        });
+
+        const siliColSnap = await getDocs(collection(db, "siladik-guru-pai-smp"));
+        siliColSnap.forEach(async (docSnap) => {
+          const d = docSnap.data();
+          if (docSnap.id === id || d.mirrorId === id || d.nama === name) {
+            await deleteDoc(doc(db, "siladik-guru-pai-smp", docSnap.id));
+          }
+        });
+      } catch (mirrorErr) {
+        console.warn("Could not delete from mirror collections: ", mirrorErr);
+      }
+
+      setSuccessMsg(`Suksus menghapus data guru ${name}`);
     } catch (err) {
-      handleSupabaseError(err, OperationType.DELETE, `users/${id}`);
+      handleFirestoreError(err, OperationType.DELETE, `users/${id}`);
       setErrorMsg("Gagal menghapus data guru.");
     }
   };
 
   // Tata Letak Management Handlers
-  const saveLayoutToSupabase = async (tabs: any, homeSections: any, customSections: any, message: string) => {
-    try {
-      const { error } = await supabase
-        .from('settings')
-        .update({
-          data: {
-            tabs,
-            homeSections,
-            customSections
-          }
-        })
-        .eq('id', 'layout');
-
-      if (error) throw error;
-      setSuccessMsg(message);
-    } catch (err) {
-      console.error(err);
-      throw err;
-    }
-  };
-
   const handleToggleTabVisibility = async (tabId: string) => {
     setErrorMsg("");
     setSuccessMsg("");
@@ -810,7 +991,12 @@ export default function AdminTab({ onLogout }: AdminTabProps = {}) {
       const updatedTabs = layoutTabs.map((t) =>
         t.id === tabId ? { ...t, visible: !t.visible } : t
       );
-      await saveLayoutToSupabase(updatedTabs, layoutHomeSections, layoutCustomSections, "Visibilitas tab navigasi berhasil diperbarui!");
+      await setDoc(doc(db, "settings", "layout"), {
+        tabs: updatedTabs,
+        homeSections: layoutHomeSections,
+        customSections: layoutCustomSections
+      }, { merge: true });
+      setSuccessMsg("Visibilitas tab navigasi berhasil diperbarui!");
     } catch (err) {
       console.error(err);
       setErrorMsg("Gagal memperbarui visibilitas tab navigasi.");
@@ -825,7 +1011,12 @@ export default function AdminTab({ onLogout }: AdminTabProps = {}) {
       const updatedTabs = layoutTabs.map((t) =>
         t.id === tabId ? { ...t, label: newLabel } : t
       );
-      await saveLayoutToSupabase(updatedTabs, layoutHomeSections, layoutCustomSections, "Nama tab navigasi berhasil diperbarui!");
+      await setDoc(doc(db, "settings", "layout"), {
+        tabs: updatedTabs,
+        homeSections: layoutHomeSections,
+        customSections: layoutCustomSections
+      }, { merge: true });
+      setSuccessMsg("Nama tab navigasi berhasil diperbarui!");
     } catch (err) {
       console.error(err);
       setErrorMsg("Gagal memperbarui nama tab navigasi.");
@@ -839,7 +1030,12 @@ export default function AdminTab({ onLogout }: AdminTabProps = {}) {
       const updatedSections = layoutHomeSections.map((s) =>
         s.id === sectId ? { ...s, visible: !s.visible } : s
       );
-      await saveLayoutToSupabase(layoutTabs, updatedSections, layoutCustomSections, "Visibilitas bagian beranda berhasil diperbarui!");
+      await setDoc(doc(db, "settings", "layout"), {
+        tabs: layoutTabs,
+        homeSections: updatedSections,
+        customSections: layoutCustomSections
+      }, { merge: true });
+      setSuccessMsg("Visibilitas bagian beranda berhasil diperbarui!");
     } catch (err) {
       console.error(err);
       setErrorMsg("Gagal memperbarui visibilitas bagian beranda.");
@@ -864,7 +1060,12 @@ export default function AdminTab({ onLogout }: AdminTabProps = {}) {
       sectionsCopy[index] = sectionsCopy[newIndex];
       sectionsCopy[newIndex] = tempObj;
 
-      await saveLayoutToSupabase(layoutTabs, sectionsCopy, layoutCustomSections, "Urutan tata letak bagian berhasil dipindahkan!");
+      await setDoc(doc(db, "settings", "layout"), {
+        tabs: layoutTabs,
+        homeSections: sectionsCopy,
+        customSections: layoutCustomSections
+      }, { merge: true });
+      setSuccessMsg("Urutan tata letak bagian berhasil dipindahkan!");
     } catch (err) {
       console.error(err);
       setErrorMsg("Gagal memindahkan urutan tata letak.");
@@ -903,9 +1104,14 @@ export default function AdminTab({ onLogout }: AdminTabProps = {}) {
         return s;
       });
 
-      await saveLayoutToSupabase(layoutTabs, updatedSections, layoutCustomSections, "Konten elemen beranda berhasil disimpan!");
+      await setDoc(doc(db, "settings", "layout"), {
+        tabs: layoutTabs,
+        homeSections: updatedSections,
+        customSections: layoutCustomSections
+      }, { merge: true });
 
       setEditingSectionId(null);
+      setSuccessMsg("Konten elemen beranda berhasil disimpan!");
     } catch (err) {
       console.error(err);
       setErrorMsg("Gagal menyimpan konten elemen beranda.");
@@ -942,11 +1148,16 @@ export default function AdminTab({ onLogout }: AdminTabProps = {}) {
         });
       }
 
-      await saveLayoutToSupabase(layoutTabs, layoutHomeSections, updatedCustoms, "Bagian kustom berhasil disimpan!");
+      await setDoc(doc(db, "settings", "layout"), {
+        tabs: layoutTabs,
+        homeSections: layoutHomeSections,
+        customSections: updatedCustoms
+      }, { merge: true });
 
       setIsCustomSectionModalOpen(false);
       setEditingCustomIndex(null);
       setCustomSectionForm({ title: "", content: "", imageUrl: "", visible: true });
+      setSuccessMsg("Bagian kustom berhasil disimpan!");
     } catch (err) {
       console.error(err);
       setErrorMsg("Gagal menyimpan bagian kustom.");
@@ -960,7 +1171,12 @@ export default function AdminTab({ onLogout }: AdminTabProps = {}) {
       const updatedCustoms = layoutCustomSections.map((c, i) =>
         i === index ? { ...c, visible: !c.visible } : c
       );
-      await saveLayoutToSupabase(layoutTabs, layoutHomeSections, updatedCustoms, "Visibilitas bagian kustom diperbarui!");
+      await setDoc(doc(db, "settings", "layout"), {
+        tabs: layoutTabs,
+        homeSections: layoutHomeSections,
+        customSections: updatedCustoms
+      }, { merge: true });
+      setSuccessMsg("Visibilitas bagian kustom diperbarui!");
     } catch (err) {
       console.error(err);
       setErrorMsg("Gagal memperbarui visibilitas bagian kustom.");
@@ -973,7 +1189,12 @@ export default function AdminTab({ onLogout }: AdminTabProps = {}) {
     setSuccessMsg("");
     try {
       const updatedCustoms = layoutCustomSections.filter((_, i) => i !== index);
-      await saveLayoutToSupabase(layoutTabs, layoutHomeSections, updatedCustoms, "Bagian kustom berhasil dihapus!");
+      await setDoc(doc(db, "settings", "layout"), {
+        tabs: layoutTabs,
+        homeSections: layoutHomeSections,
+        customSections: updatedCustoms
+      }, { merge: true });
+      setSuccessMsg("Bagian kustom berhasil dihapus!");
     } catch (err) {
       console.error(err);
       setErrorMsg("Gagal menghapus bagian kustom.");
@@ -997,8 +1218,8 @@ export default function AdminTab({ onLogout }: AdminTabProps = {}) {
            n.summary.toLowerCase().includes(searchNewsQuery.toLowerCase());
   });
 
-  const activeEmail = isSimulated ? simulatedEmail : "";
-  const currentAdminName = isSimulated ? "Developer Admin Mode" : "";
+  const activeEmail = user?.email || (isSimulated ? simulatedEmail : "");
+  const currentAdminName = user?.displayName || (isSimulated ? "Developer Admin Mode" : "");
 
   const chartData = React.useMemo(() => {
     // Generate dates for the last 7 days
@@ -1133,7 +1354,7 @@ export default function AdminTab({ onLogout }: AdminTabProps = {}) {
           </form>
 
           <p className="text-[10px] text-emerald-300/40 font-mono">
-            SILADIK Security Module | Protected with Supabase @{new Date().getFullYear()}
+            SILADIK Security Module | Protected with Firebase Auth @{new Date().getFullYear()}
           </p>
         </div>
       </div>
@@ -1259,6 +1480,18 @@ export default function AdminTab({ onLogout }: AdminTabProps = {}) {
             </button>
 
             <button
+              onClick={() => setAdminSubTab("integrasi_firebase")}
+              className={`flex items-center gap-2.5 px-4 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                adminSubTab === "integrasi_firebase"
+                  ? "bg-emerald-800 text-white shadow font-black"
+                  : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-50"
+              }`}
+            >
+              <Database className="w-4 h-4 text-amber-500 shrink-0" />
+              <span>e. Integrasi Firebase</span>
+            </button>
+
+            <button
               onClick={() => setAdminSubTab("kelola_pemberitahuan")}
               className={`flex items-center gap-2.5 px-4 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
                 adminSubTab === "kelola_pemberitahuan"
@@ -1267,7 +1500,7 @@ export default function AdminTab({ onLogout }: AdminTabProps = {}) {
               }`}
             >
               <Megaphone className="w-4 h-4 text-rose-500 shrink-0" />
-              <span>e. Kelola Pengumuman</span>
+              <span>f. Kelola Pengumuman</span>
             </button>
 
             <button
@@ -1279,7 +1512,7 @@ export default function AdminTab({ onLogout }: AdminTabProps = {}) {
               }`}
             >
               <Sliders className="w-4 h-4 text-indigo-500 shrink-0" />
-              <span>f. Kelola Tata Letak</span>
+              <span>g. Kelola Tata Letak</span>
             </button>
 
             <button
@@ -1297,11 +1530,11 @@ export default function AdminTab({ onLogout }: AdminTabProps = {}) {
           
           <div className="border-t border-slate-200 pt-3 px-1 flex flex-col gap-1">
             <div className="flex justify-between items-center text-[9px] text-slate-400 font-mono uppercase font-black">
-              <span>Sistem Supabase</span>
+              <span>Sistem Firestore</span>
               <span className="text-emerald-700 font-extrabold">Online</span>
             </div>
             <div className="text-[9px] text-slate-400 font-mono leading-tight break-all">
-              DB: Supabase PostgreSQL
+              DB: {firebaseDbId === "ai-studio-52c3b800-b7a1-459e-af6e-315e9ae0eb3a" ? "Sandbox" : firebaseDbId}
             </div>
           </div>
         </div>
@@ -1352,7 +1585,7 @@ export default function AdminTab({ onLogout }: AdminTabProps = {}) {
                 <h3 className="text-sm font-extrabold text-emerald-700 bg-emerald-50 w-max px-3 py-1 rounded-full border border-emerald-100">
                   Aktif Real-time
                 </h3>
-                <p className="text-[11px] text-slate-500 leading-snug font-medium pt-2">Tersinkronisasi real-time ke Supabase PostgreSQL: tabel `users`, berita, kegiatan, dan interaksi AI.</p>
+                <p className="text-[11px] text-slate-500 leading-snug font-medium pt-2">Tersinkronisasi dua arah ke Firestore: `users`, `siladik-guru-pai-smp` & `teachers` collections.</p>
               </div>
             </div>
 
@@ -1633,7 +1866,7 @@ export default function AdminTab({ onLogout }: AdminTabProps = {}) {
                   if (window.confirm("Apakah Anda yakin ingin menyelaraskan/memulihkan data profil & struktur organisasi ke database cloud Firebase?")) {
                     setIsSeeding(true);
                     try {
-                      await saveProfileToSupabase(
+                      await saveProfileToFirestore(
                         ADMIN_INITIAL_VISI,
                         ADMIN_INITIAL_MISI,
                         ADMIN_INITIAL_TUJUAN,
@@ -1709,7 +1942,7 @@ export default function AdminTab({ onLogout }: AdminTabProps = {}) {
                     <span>* Perubahan visi akan langsung ter-render di tab Profil bagi seluruh pengunjung portal.</span>
                     <button
                       onClick={() => {
-                        saveProfileToSupabase(adminVisi);
+                        saveProfileToFirestore(adminVisi);
                         setSuccessMsg("Pernyataan visi organisasi berhasil diperbarui!");
                         setTimeout(() => setSuccessMsg(""), 3000);
                       }}
@@ -1752,7 +1985,7 @@ export default function AdminTab({ onLogout }: AdminTabProps = {}) {
                           updated = [...adminMisi, newMisiText.trim()];
                         }
                         setAdminMisi(updated);
-                        saveProfileToSupabase(undefined, updated);
+                        saveProfileToFirestore(undefined, updated);
                         setNewMisiText("");
                         setSuccessMsg("Butir misi organisasi berhasil diperbarui!");
                         setTimeout(() => setSuccessMsg(""), 3000);
@@ -1801,7 +2034,7 @@ export default function AdminTab({ onLogout }: AdminTabProps = {}) {
                             if (window.confirm("Hapus butir misi ini?")) {
                               const updated = adminMisi.filter((_, i) => i !== idx);
                               setAdminMisi(updated);
-                              saveProfileToSupabase(undefined, updated);
+                              saveProfileToFirestore(undefined, updated);
                               setSuccessMsg("Misi berhasil dihapus!");
                               setTimeout(() => setSuccessMsg(""), 3000);
                             }
@@ -1868,7 +2101,7 @@ export default function AdminTab({ onLogout }: AdminTabProps = {}) {
                             updated = [...adminTujuan, record];
                           }
                           setAdminTujuan(updated);
-                          saveProfileToSupabase(undefined, undefined, updated);
+                          saveProfileToFirestore(undefined, undefined, updated);
                           setNewTujuanTitle("");
                           setNewTujuanDesc("");
                           setSuccessMsg("Butir tujuan berhasil diperbarui!");
@@ -1921,7 +2154,7 @@ export default function AdminTab({ onLogout }: AdminTabProps = {}) {
                               if (window.confirm("Hapus butir tujuan ini?")) {
                                 const updated = adminTujuan.filter((_, i) => i !== idx);
                                 setAdminTujuan(updated);
-                                saveProfileToSupabase(undefined, undefined, updated);
+                                saveProfileToFirestore(undefined, undefined, updated);
                                 setSuccessMsg("Butir sasaran berhasil dihapus!");
                                 setTimeout(() => setSuccessMsg(""), 3000);
                               }
@@ -2024,7 +2257,7 @@ export default function AdminTab({ onLogout }: AdminTabProps = {}) {
                             if (window.confirm(`Hapus anggota pengurus "${member.name}" dari dewan pengurus?`)) {
                               const updated = adminStructure.filter((_, i) => i !== idx);
                               setAdminStructure(updated);
-                              saveProfileToSupabase(undefined, undefined, undefined, updated);
+                              saveProfileToFirestore(undefined, undefined, undefined, updated);
                               setSuccessMsg("Anggota pengurus berhasil dihapus!");
                               setTimeout(() => setSuccessMsg(""), 3000);
                             }
@@ -2078,7 +2311,7 @@ export default function AdminTab({ onLogout }: AdminTabProps = {}) {
                           updated = [...adminStructure, record];
                         }
                         setAdminStructure(updated);
-                        saveProfileToSupabase(undefined, undefined, undefined, updated);
+                        saveProfileToFirestore(undefined, undefined, undefined, updated);
                         setIsMemberModalOpen(false);
                         setSuccessMsg("Keanggotaan struktur organisasi berhasil diperbarui!");
                         setTimeout(() => setSuccessMsg(""), 3000);
@@ -2612,17 +2845,12 @@ export default function AdminTab({ onLogout }: AdminTabProps = {}) {
                           blinking: announcementBlinking,
                           updatedAt: new Date().toISOString()
                         };
-
-                        const { error } = await supabase
-                          .from('settings')
-                          .update({ data: payload })
-                          .eq('id', 'announcement');
-
-                        if (error) throw error;
+                        
+                        await setDoc(doc(db, "settings", "announcement"), payload);
                         setSuccessMsg("Pengumuman berhasil diperbarui dan dipublikasikan secara real-time!");
                       } catch (err: any) {
                         console.error("Failed to update announcement:", err);
-                        setErrorMsg("Gagal menyimpan ke Supabase: " + err.message);
+                        setSuccessMsg("Gagal menyimpan ke Firestore: " + err.message);
                       }
                     }}
                     className="bg-rose-600 hover:bg-rose-500 text-white text-xs font-black py-2.5 px-6 rounded-xl shadow transition-all cursor-pointer border border-rose-700"
@@ -2656,28 +2884,199 @@ export default function AdminTab({ onLogout }: AdminTabProps = {}) {
         </div>
       )}
 
-      {/* Firebase integration tab removed - migrated to Supabase */}
+      {/* SUB TAB 5: INTEGRASI FIREBASE */}
+      {adminSubTab === "integrasi_firebase" && (
+        <div className="space-y-6 animate-fade-in-up">
+          <div className="bg-white border border-slate-150 p-6 rounded-3xl shadow-sm space-y-6">
+            <div className="border-b border-slate-100 pb-5">
+              <h3 className="text-base font-black text-slate-800 flex items-center gap-2">
+                <Database className="w-5 h-5 text-amber-500" />
+                Integrasi Real-time Database Firebase
+              </h3>
+              <p className="text-xs text-slate-400 font-medium">
+                Konfigurasikan kunci API dan koordinat instansi Firebase Anda secara langsung untuk menghubungkan portal MGMP PAI ini dengan database realtime baru Anda.
+              </p>
+            </div>
 
-      {/* SUB TAB 5: API MONITORING */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              {/* Form Config Fields */}
+              <div className="lg:col-span-2 space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  
+                  <div className="space-y-1.5">
+                    <label className="font-extrabold text-[11px] text-slate-500 block">API Key (Web API Key)</label>
+                    <input 
+                      type="text" 
+                      value={firebaseApiKey}
+                      onChange={(e) => setFirebaseApiKey(e.target.value)}
+                      className="w-full px-3 py-2 text-xs sm:text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-1 focus:ring-emerald-700 text-slate-800 font-mono text-xs"
+                      placeholder="AIzaSy..."
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="font-extrabold text-[11px] text-slate-500 block">Project ID</label>
+                    <input 
+                      type="text" 
+                      value={firebaseProjectId}
+                      onChange={(e) => setFirebaseProjectId(e.target.value)}
+                      className="w-full px-3 py-2 text-xs sm:text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-1 focus:ring-emerald-700 text-slate-800 font-mono text-xs"
+                      placeholder="e.g. promising-card-0pnh2"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="font-extrabold text-[11px] text-slate-500 block">App ID</label>
+                    <input 
+                      type="text" 
+                      value={firebaseAppId}
+                      onChange={(e) => setFirebaseAppId(e.target.value)}
+                      className="w-full px-3 py-2 text-xs sm:text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-1 focus:ring-emerald-700 text-slate-800 font-mono text-xs"
+                      placeholder="e.g. 1:827904139612:web:..."
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="font-extrabold text-[11px] text-slate-500 block">Database ID (ID Firestore Custom)</label>
+                    <input 
+                      type="text" 
+                      value={firebaseDbId}
+                      onChange={(e) => setFirebaseDbId(e.target.value)}
+                      className="w-full px-3 py-2 text-xs sm:text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-1 focus:ring-emerald-700 text-slate-800 font-mono text-xs"
+                      placeholder="e.g. (default) atau nama database custom Anda"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="font-extrabold text-[11px] text-slate-500 block">Auth Domain</label>
+                    <input 
+                      type="text" 
+                      value={firebaseAuthDomain}
+                      onChange={(e) => setFirebaseAuthDomain(e.target.value)}
+                      className="w-full px-3 py-2 text-xs sm:text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-1 focus:ring-emerald-700 text-slate-800 font-mono text-xs"
+                      placeholder="e.g. project-id.firebaseapp.com"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="font-extrabold text-[11px] text-slate-500 block">Storage Bucket</label>
+                    <input 
+                      type="text" 
+                      value={firebaseStorageBucket}
+                      onChange={(e) => setFirebaseStorageBucket(e.target.value)}
+                      className="w-full px-3 py-2 text-xs sm:text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-1 focus:ring-emerald-700 text-slate-800 font-mono text-xs"
+                      placeholder="e.g. project-id.firebasestorage.app"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5 sm:col-span-2">
+                    <label className="font-extrabold text-[11px] text-slate-500 block">Messaging Sender ID</label>
+                    <input 
+                      type="text" 
+                      value={firebaseMessagingSenderId}
+                      onChange={(e) => setFirebaseMessagingSenderId(e.target.value)}
+                      className="w-full px-3 py-2 text-xs sm:text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-1 focus:ring-emerald-700 text-slate-800 font-mono text-xs"
+                      placeholder="e.g. 827904139612"
+                    />
+                  </div>
+
+                </div>
+
+                <div className="flex flex-wrap items-center justify-end gap-3 pt-4">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (window.confirm("Apakah Anda yakin ingin mengatur ulang ke konfigurasi bawaan portal?")) {
+                        localStorage.removeItem("custom_firebase_config");
+                        localStorage.removeItem("custom_firebase_db_id");
+                        setSuccessMsg("Berhasil mereset konfigurasi Firebase ke bawaan portal. Portal akan memuat ulang...");
+                        setTimeout(() => {
+                          window.location.reload();
+                        }, 1500);
+                      }
+                    }}
+                    className="bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-black py-2.5 px-4 rounded-xl shadow-sm transition-all cursor-pointer border border-slate-200"
+                  >
+                    Reset ke Bawaan
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      try {
+                        const testConfig = {
+                          apiKey: firebaseApiKey.trim(),
+                          projectId: firebaseProjectId.trim(),
+                          appId: firebaseAppId.trim(),
+                          authDomain: firebaseAuthDomain.trim(),
+                          storageBucket: firebaseStorageBucket.trim(),
+                          messagingSenderId: firebaseMessagingSenderId.trim()
+                        };
+                        
+                        localStorage.setItem("custom_firebase_config", JSON.stringify(testConfig));
+                        localStorage.setItem("custom_firebase_db_id", firebaseDbId.trim());
+                        
+                        setSuccessMsg("Integrasi Firebase berhasil diterapkan! Halaman akan menyegarkan koneksi dalam 1.5 detik...");
+                        setTimeout(() => {
+                          window.location.reload();
+                        }, 1500);
+                      } catch (err: any) {
+                        console.error("Failed to save config:", err);
+                        setSuccessMsg("Gagal menyimpan konfigurasi: " + err.message);
+                      }
+                    }}
+                    className="bg-emerald-800 hover:bg-emerald-700 text-white text-xs font-black py-2.5 px-6 rounded-xl shadow transition-all cursor-pointer border border-emerald-900"
+                  >
+                    Simpan & Terapkan Integrasi Firebase
+                  </button>
+                </div>
+              </div>
+
+              {/* Help & Instruction Sidebar */}
+              <div className="bg-slate-50 rounded-2xl p-5 border border-slate-200 shrink-0 space-y-4 text-xs font-sans">
+                <h4 className="text-xs font-black text-slate-600 uppercase tracking-wider">ℹ️ Panduan Integrasi Cepat</h4>
+                
+                <div className="space-y-3 leading-relaxed font-semibold text-slate-600">
+                  <p>
+                    Anda tidak perlu lagi mengedit berkas kode HTML atau skrip untuk menyinkronkan database real-time. Ikuti langkah sederhana ini:
+                  </p>
+                  <ol className="list-decimal pl-4 space-y-2">
+                    <li>Buka konsol pengelola Anda di <a href="https://console.firebase.google.com" target="_blank" rel="noreferrer" className="text-emerald-700 underline font-black">Firebase Console</a>.</li>
+                    <li>Salin parameter dari bagian <strong>Project Settings</strong> &gt; <strong>Your Apps</strong> &gt; <strong>SDK Setup and Configuration</strong>.</li>
+                    <li>Tempelkan nilai masing-masing kolom ke kolom konfigurasi di sebelah kiri.</li>
+                    <li>Klik <strong>Simpan & Terapkan Integrasi</strong> untuk menerapkan sambungan real-time instan ke seluruh sistem web.</li>
+                  </ol>
+                  <div className="bg-amber-50 border border-amber-200 text-amber-900 rounded-xl p-3 text-[10px] space-y-1">
+                    <span className="font-bold block">💡 Catatan Keamanan</span>
+                    Konfigurasi disimpan secara aman di peramban dan sinkronisasi. Untuk memulihkan keadaan semula sewaktu-waktu jika terjadi kesalahan pengisian kunci, klik tombol <span className="font-bold text-slate-800">Reset ke Bawaan</span>.
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* SUB TAB 4: API MONITORING */}
       {adminSubTab === "api_monitoring" && (
         <div className="space-y-6">
           <div className="bg-white border border-slate-150 p-6 rounded-3xl shadow-sm space-y-6">
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-slate-100 pb-5">
               <div>
                 <h3 className="text-base font-black text-slate-800 font-sans">Pemantauan Penggunaan API Gemini</h3>
-                <p className="text-xs text-slate-400 font-medium">Lacak kuota token API Gemini 3.5 Flash dan log interaksi guru secara real-time dari Supabase.</p>
+                <p className="text-xs text-slate-400 font-medium">Lacak kuota token API Gemini 3.5 Flash dan log interaksi guru secara real-time dari Firestore.</p>
               </div>
               <button
                 onClick={async () => {
-                  if (window.confirm("Apakah Anda yakin ingin menghapus seluruh log interaksi di server Supabase? Tindakan ini tidak bisa dibatalkan.")) {
-                    try {
-                      const { error } = await supabase.from('ai_interactions').delete().neq('id', '');
-                      if (error) throw error;
-                      setSuccessMsg("Seluruh log pencatatan interaksi AI berhasil dihapus!");
-                    } catch (err) {
-                      console.error("Error deleting AI logs:", err);
-                      setErrorMsg("Gagal menghapus log interaksi AI.");
-                    }
+                  if (window.confirm("Apakah Anda yakin ingin menghapus seluruh log interaksi di server Firestore? Tindakan ini tidak bisa dibatalkan.")) {
+                    const colRef = collection(db, "ai-interactions");
+                    const snap = await getDocs(colRef);
+                    const batch = writeBatch(db);
+                    snap.forEach((docSnap) => {
+                      batch.delete(docSnap.ref);
+                    });
+                    await batch.commit();
+                    setSuccessMsg("Seluruh log pencatatan interaksi AI berhasil dihapus!");
                   }
                 }}
                 className="bg-red-50 hover:bg-red-100 text-red-700 text-xs font-bold py-2 px-3 rounded-lg border border-red-200 transition-all cursor-pointer"
@@ -2751,7 +3150,7 @@ export default function AdminTab({ onLogout }: AdminTabProps = {}) {
               </div>
             </div>
 
-            {/* Supabase Logs Table */}
+            {/* Firestore Logs Table */}
             <div className="space-y-4 pt-1">
               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
                 <h4 className="text-xs font-black text-slate-700 uppercase tracking-wider">

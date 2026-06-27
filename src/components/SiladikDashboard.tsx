@@ -1,23 +1,16 @@
 import React, { useState, useEffect } from "react";
-import { supabase } from "../lib/supabase";
-
-// Teacher data type (replaces TeacherData from firebaseSeeder)
-interface TeacherData {
-  id: string;
-  nama: string;
-  nip: string;
-  nuptk: string;
-  status: "PNS" | "PPPK" | "Non ASN";
-  komisariat: "jalancagak" | "subang" | "kalijati" | "pagaden" | "pamanukan" | "ciasem";
-  sekolah: string;
-  whatsapp: string;
-  username?: string;
-  password?: string;
-  status_pembayaran?: "Lunas" | "Belum Bayar" | "Menunggak" | "Aktif";
-  iuran_bulanan?: "Lunas" | "Belum Bayar" | "Menunggak" | "Aktif";
-  iuran_status?: string;
-  created_at?: string;
-}
+import { 
+  collection, 
+  onSnapshot, 
+  addDoc, 
+  deleteDoc, 
+  doc, 
+  getDocs,
+  query,
+  orderBy
+} from "firebase/firestore";
+import { db } from "../lib/firebase";
+import { seedTeachersIfEmpty, TeacherData } from "../lib/firebaseSeeder";
 import { 
   Users, 
   ShieldCheck, 
@@ -81,276 +74,64 @@ export default function SiladikDashboard({ onOpenApkInfo }: SiladikDashboardProp
 
   // Listen to custom announcement settings
   useEffect(() => {
-    const fetchAnnouncement = async () => {
-      try {
-        const { data, error } = await supabase
-          .from('settings')
-          .select('data')
-          .eq('id', 'announcement')
-          .single();
-
-        if (error) {
-          console.error("Supabase listening to announcement error:", error);
-          return;
-        }
-
-        if (data) {
-          const announcementData = data.data || {};
-          const updated = {
-            text: announcementData.text || "Segera Install Aplikasi Android Resmi Portal MGMP PAI SMP Subang! Klik di sini untuk panduan instalasi & unduh.",
-            badgeText: announcementData.badgeText || "INFO PENTING",
-            actionUrl: announcementData.actionUrl || "",
-            actionType: announcementData.actionType || "apk",
-            blinking: announcementData.blinking !== undefined ? announcementData.blinking : true
-          };
-          setAnnouncement(updated);
-          localStorage.setItem("mgmp_pai_announcement", JSON.stringify(updated));
-        }
-      } catch (err) {
-        console.error("Error fetching announcement:", err);
+    const announcementDoc = doc(db, "settings", "announcement");
+    const unsubAnnouncement = onSnapshot(announcementDoc, (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        const updated = {
+          text: data.text || "Segera Install Aplikasi Android Resmi Portal MGMP PAI SMP Subang! Klik di sini untuk panduan instalasi & unduh.",
+          badgeText: data.badgeText || "INFO PENTING",
+          actionUrl: data.actionUrl || "",
+          actionType: data.actionType || "apk",
+          blinking: data.blinking !== undefined ? data.blinking : true
+        };
+        setAnnouncement(updated);
+        localStorage.setItem("mgmp_pai_announcement", JSON.stringify(updated));
       }
-    };
+    }, (err) => {
+      console.error("Firestore listening to announcement error:", err);
+    });
 
-    fetchAnnouncement();
+    return () => {
+      unsubAnnouncement();
+    };
   }, []);
 
-  // Seed data & listen to Supabase changes
+  // Seed data & listen to Firestore changes
   useEffect(() => {
     let isMounted = true;
+    let unsubscribe: (() => void) | null = null;
 
-    const initSupabase = async () => {
+    const initFirebase = async () => {
       try {
         setLoading(true);
-
-        // Check if table is empty and seed if needed
-        const { data: existingUsers, error: checkError } = await supabase
-          .from('users')
-          .select('id')
-          .limit(1);
-
-        if (checkError) throw checkError;
-
-        if (!existingUsers || existingUsers.length === 0) {
-          console.log("Seeding initial teachers data into 'users' table...");
-
-          const DEFAULT_TEACHERS: Omit<TeacherData, 'id'>[] = [
-            {
-              nama: "H. Ahmad Fauzi, S.Ag., M.Pd.I.",
-              nip: "197812052005011002",
-              nuptk: "4321745648210032",
-              status: "PNS",
-              komisariat: "subang",
-              sekolah: "SMP Negeri 1 Subang",
-              whatsapp: "08123456789",
-              username: "ahmad.fauzi",
-              password: "sigap123",
-              status_pembayaran: "Lunas",
-              iuran_bulanan: "Lunas"
-            },
-            {
-              nama: "Dr. Lailatul Badriyah, M.Pd.",
-              nip: "198304122009042001",
-              nuptk: "9876756658110043",
-              status: "PPPK",
-              komisariat: "subang",
-              sekolah: "SMP Negeri 2 Subang",
-              whatsapp: "08139876543",
-              username: "lailatul",
-              password: "sigap123",
-              status_pembayaran: "Belum Bayar",
-              iuran_bulanan: "Belum Bayar"
-            },
-            {
-              nama: "Nur Hidayat, S.Th.I., M.Pd.",
-              nip: "198511202011021003",
-              nuptk: "7654762263110052",
-              status: "PPPK",
-              komisariat: "jalancagak",
-              sekolah: "SMP Negeri 1 Jalancagak",
-              whatsapp: "08564231987",
-              username: "nur.hidayat",
-              password: "sigap123",
-              status_pembayaran: "Menunggak",
-              iuran_bulanan: "Menunggak"
-            },
-            {
-              nama: "Dra. Siti Aminah, M.A.",
-              nip: "197108151998032001",
-              nuptk: "1234749950110021",
-              status: "PNS",
-              komisariat: "pagaden",
-              sekolah: "SMP Negeri 1 Pagaden",
-              whatsapp: "08521122334",
-              username: "siti.aminah",
-              password: "sigap123",
-              status_pembayaran: "Lunas",
-              iuran_bulanan: "Lunas"
-            },
-            {
-              nama: "Zainal Abidin, S.Pd.I.",
-              nip: "",
-              nuptk: "5543765566300012",
-              status: "Non ASN",
-              komisariat: "kalijati",
-              sekolah: "SMP Negeri 1 Kalijati",
-              whatsapp: "08997788990",
-              username: "zainal.abidin",
-              password: "sigap123",
-              status_pembayaran: "Belum Bayar",
-              iuran_bulanan: "Belum Bayar"
-            },
-            {
-              nama: "Fatimah Az-Zahra, S.Sos.I., M.Pd.",
-              nip: "",
-              nuptk: "8872740049210087",
-              status: "Non ASN",
-              komisariat: "subang",
-              sekolah: "SMP Negeri 3 Subang",
-              whatsapp: "08121122334",
-              username: "fatimah.zahra",
-              password: "sigap123",
-              status_pembayaran: "Lunas",
-              iuran_bulanan: "Lunas"
-            },
-            {
-              nama: "H. Maman Suparman, M.Ag.",
-              nip: "197509142003121001",
-              nuptk: "3499748858110098",
-              status: "PNS",
-              komisariat: "pamanukan",
-              sekolah: "SMP Negeri 1 Pamanukan",
-              whatsapp: "08123344556",
-              username: "maman.suparman",
-              password: "sigap123",
-              status_pembayaran: "Lunas",
-              iuran_bulanan: "Lunas"
-            },
-            {
-              nama: "Siti Masitoh, S.Pd.I.",
-              nip: "",
-              nuptk: "1122758860220034",
-              status: "Non ASN",
-              komisariat: "ciasem",
-              sekolah: "SMP Negeri 1 Ciasem",
-              whatsapp: "08772233445",
-              username: "siti.masitoh",
-              password: "sigap123",
-              status_pembayaran: "Belum Bayar",
-              iuran_bulanan: "Belum Bayar"
-            },
-            {
-              nama: "Yusuf Al-Bantani, S.Ag.",
-              nip: "198006222008011014",
-              nuptk: "6548749960110034",
-              status: "PNS",
-              komisariat: "pamanukan",
-              sekolah: "SMP Negeri 2 Pamanukan",
-              whatsapp: "08134455667",
-              username: "yusuf.albantani",
-              password: "sigap123",
-              status_pembayaran: "Lunas",
-              iuran_bulanan: "Lunas"
-            },
-            {
-              nama: "Imas Rohima, S.Pd.",
-              nip: "",
-              nuptk: "2233761162330045",
-              status: "Non ASN",
-              komisariat: "ciasem",
-              sekolah: "SMP Negeri 2 Ciasem",
-              whatsapp: "08522233445",
-              username: "imas.rohima",
-              password: "sigap123",
-              status_pembayaran: "Belum Bayar",
-              iuran_bulanan: "Belum Bayar"
-            },
-            {
-              nama: "Deden Suryana, S.Pd.I.",
-              nip: "",
-              nuptk: "9982746658110032",
-              status: "PPPK",
-              komisariat: "kalijati",
-              sekolah: "SMP Negeri 1 Purwadadi",
-              whatsapp: "08194455667",
-              username: "deden.suryana",
-              password: "sigap123",
-              status_pembayaran: "Menunggak",
-              iuran_bulanan: "Menunggak"
-            },
-            {
-              nama: "Tuti Alawiyah, M.Pd.I.",
-              nip: "198802142019032011",
-              nuptk: "8832764459110032",
-              status: "PPPK",
-              komisariat: "pagaden",
-              sekolah: "SMP Negeri 2 Pagaden",
-              whatsapp: "08534455667",
-              username: "tuti.alawiyah",
-              password: "sigap123",
-              status_pembayaran: "Lunas",
-              iuran_bulanan: "Lunas"
-            },
-            {
-              nama: "Lukman Hakim, S.Th.I.",
-              nip: "",
-              nuptk: "7763750058220042",
-              status: "Non ASN",
-              komisariat: "jalancagak",
-              sekolah: "SMP Negeri 1 Sagalaherang",
-              whatsapp: "08129988776",
-              username: "lukman.hakim",
-              password: "sigap123",
-              status_pembayaran: "Belum Bayar",
-              iuran_bulanan: "Belum Bayar"
-            }
-          ];
-
-          const { error: seedError } = await supabase
-            .from('users')
-            .insert(DEFAULT_TEACHERS);
-
-          if (seedError) throw seedError;
-        }
+        // Ensure some initial records exist in database
+        await seedTeachersIfEmpty();
 
         if (!isMounted) return;
 
-        // Fetch all users ordered by name
-        const { data, error } = await supabase
-          .from('users')
-          .select('*')
-          .order('nama', { ascending: true });
+        const q = query(
+          collection(db, "users"),
+          orderBy("nama", "asc")
+        );
 
-        if (error) throw error;
-
-        if (!isMounted) return;
-
-        setTeachers(data as TeacherData[]);
-        setLoading(false);
-
-        // Set up realtime subscription for future changes
-        const channel = supabase
-          .channel('users-changes')
-          .on(
-            'postgres_changes',
-            { event: '*', schema: 'public', table: 'users' },
-            () => {
-              // Refetch when changes occur
-              supabase
-                .from('users')
-                .select('*')
-                .order('nama', { ascending: true })
-                .then(({ data: updatedData }) => {
-                  if (isMounted && updatedData) {
-                    setTeachers(updatedData as TeacherData[]);
-                  }
-                });
-            }
-          )
-          .subscribe();
-
-        return () => {
-          supabase.removeChannel(channel);
-        };
+        unsubscribe = onSnapshot(q, (snapshot) => {
+          if (!isMounted) return;
+          const list: TeacherData[] = [];
+          snapshot.forEach((doc) => {
+            list.push({
+              id: doc.id,
+              ...doc.data()
+            } as TeacherData);
+          });
+          setTeachers(list);
+          setLoading(false);
+        }, (err) => {
+          if (!isMounted) return;
+          console.error("Firestore listening error in SiladikDashboard:", err);
+          setError("Gagal memuat data dari database real-time.");
+          setLoading(false);
+        });
       } catch (e: any) {
         if (!isMounted) return;
         console.error("Error initializing Database in SiladikDashboard:", e);
@@ -359,11 +140,11 @@ export default function SiladikDashboard({ onOpenApkInfo }: SiladikDashboardProp
       }
     };
 
-    const cleanup = initSupabase();
+    initFirebase();
 
     return () => {
       isMounted = false;
-      cleanup?.then(unsub => unsub?.());
+      if (unsubscribe) unsubscribe();
     };
   }, []);
 
@@ -466,7 +247,7 @@ export default function SiladikDashboard({ onOpenApkInfo }: SiladikDashboardProp
       {loading && (
         <div className="p-12 text-center bg-white border border-slate-100/80 rounded-3xl shadow-sm flex flex-col items-center justify-center space-y-3">
           <RefreshCw className="w-8 h-8 text-emerald-600 animate-spin" />
-          <h3 className="font-bold text-slate-700 text-sm">Menghubungkan ke Database Supabase...</h3>
+          <h3 className="font-bold text-slate-700 text-sm">Menghubungkan ke Database Firestore...</h3>
           <p className="text-xs text-slate-400">Sinkronisasi data kepegawaian SILADIK Kabupaten Subang</p>
         </div>
       )}

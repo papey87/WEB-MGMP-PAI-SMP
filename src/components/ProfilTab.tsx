@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { Users, Shield, Target, Award, MapPin, BadgeCheck, Plus, Trash2, Edit3, X, Check, User as LucideUser, Upload } from "lucide-react";
-import { useProfileData } from "../contexts/SupabaseContext";
+import { doc, onSnapshot, setDoc } from "firebase/firestore";
+import { db } from "../lib/firebase";
 
 const STRUKTUR_ORGANISASI: any[] = [];
 
@@ -78,14 +79,12 @@ export default function ProfilTab() {
   // Admin Detection State
   const [isAdmin, setIsAdmin] = useState(() => localStorage.getItem("admin_portal_access") === "true");
 
-  // Supabase Profile Data Hook
-  const { profile, loading, updateProfile } = useProfileData();
-
   // Local Editable States
   const [profileVisi, setProfileVisi] = useState("");
   const [profileMisi, setProfileMisi] = useState<string[]>([]);
   const [profileTujuan, setProfileTujuan] = useState<any[]>([]);
   const [structureList, setStructureList] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
 
   // Editor Modals States
   const [isVisiModalOpen, setIsVisiModalOpen] = useState(false);
@@ -122,40 +121,67 @@ export default function ProfilTab() {
     };
   }, []);
 
-  // Sync profile data from Supabase context to local state
+  // Firebase Real-time Synchronization for Profile
   useEffect(() => {
-    if (profile) {
-      if (profile.visi !== undefined) {
-        setProfileVisi(profile.visi);
-        setTempVisi(profile.visi);
+    let isMounted = true;
+    const docRef = doc(db, "settings", "profile");
+    const unsub = onSnapshot(docRef, (docSnap) => {
+      if (!isMounted) return;
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        if (data.visi !== undefined) {
+          setProfileVisi(data.visi);
+          setTempVisi(data.visi);
+          localStorage.setItem("mgmp_profile_visi", data.visi);
+        }
+        if (data.misi !== undefined) {
+          setProfileMisi(data.misi);
+          localStorage.setItem("mgmp_profile_misi", JSON.stringify(data.misi));
+        }
+        if (data.tujuan !== undefined) {
+          setProfileTujuan(data.tujuan);
+          localStorage.setItem("mgmp_profile_tujuan", JSON.stringify(data.tujuan));
+        }
+        if (data.structure !== undefined) {
+          setStructureList(data.structure);
+          localStorage.setItem("mgmp_profile_structure", JSON.stringify(data.structure));
+        }
+      } else {
+        // Document doesn't exist yet, reset states to empty
+        setProfileVisi("");
+        setProfileMisi([]);
+        setProfileTujuan([]);
+        setStructureList([]);
       }
-      if (profile.misi !== undefined) {
-        setProfileMisi(profile.misi);
+      setLoading(false);
+    }, (err) => {
+      console.error("Error listening to profile settings in ProfilTab:", err);
+      if (isMounted) {
+        setLoading(false);
       }
-      if (profile.tujuan !== undefined) {
-        setProfileTujuan(profile.tujuan);
-      }
-      if (profile.structure !== undefined) {
-        setStructureList(profile.structure);
-      }
-    }
-  }, [profile]);
+    });
+    return () => {
+      isMounted = false;
+      unsub();
+    };
+  }, []);
 
-  const syncProfileToSupabase = async (
+  const syncProfileToFirestore = async (
     updatedVisi?: string,
     updatedMisi?: string[],
     updatedTujuan?: any[],
     updatedStructure?: any[]
   ) => {
     try {
+      const docRef = doc(db, "settings", "profile");
       const payload: any = {};
       if (updatedVisi !== undefined) payload.visi = updatedVisi;
       if (updatedMisi !== undefined) payload.misi = updatedMisi;
       if (updatedTujuan !== undefined) payload.tujuan = updatedTujuan;
       if (updatedStructure !== undefined) payload.structure = updatedStructure;
-      await updateProfile(payload);
+      await setDoc(docRef, payload, { merge: true });
     } catch (err) {
-      console.error("Failed to sync profile to Supabase:", err);
+      console.error("Failed to sync profile to Firebase:", err);
     }
   };
 
@@ -164,7 +190,7 @@ export default function ProfilTab() {
     e.preventDefault();
     setProfileVisi(tempVisi);
     localStorage.setItem("mgmp_profile_visi", tempVisi);
-    syncProfileToSupabase(tempVisi);
+    syncProfileToFirestore(tempVisi);
     setIsVisiModalOpen(false);
   };
 
@@ -183,7 +209,7 @@ export default function ProfilTab() {
 
     setProfileMisi(updated);
     localStorage.setItem("mgmp_profile_misi", JSON.stringify(updated));
-    syncProfileToSupabase(undefined, updated);
+    syncProfileToFirestore(undefined, updated);
     setIsMisiModalOpen(false);
     setEditingMisiIdx(null);
     setTempMisiText("");
@@ -191,10 +217,12 @@ export default function ProfilTab() {
 
   // Delete Misi
   const handleDeleteMisi = (idx: number) => {
-    const updated = profileMisi.filter((_, i) => i !== idx);
-    setProfileMisi(updated);
-    localStorage.setItem("mgmp_profile_misi", JSON.stringify(updated));
-    syncProfileToSupabase(undefined, updated);
+    if (window.confirm("Apakah Anda yakin ingin menghapus butir misi ini?")) {
+      const updated = profileMisi.filter((_, i) => i !== idx);
+      setProfileMisi(updated);
+      localStorage.setItem("mgmp_profile_misi", JSON.stringify(updated));
+      syncProfileToFirestore(undefined, updated);
+    }
   };
 
   // Add / Edit Tujuan
@@ -212,7 +240,7 @@ export default function ProfilTab() {
 
     setProfileTujuan(updated);
     localStorage.setItem("mgmp_profile_tujuan", JSON.stringify(updated));
-    syncProfileToSupabase(undefined, undefined, updated);
+    syncProfileToFirestore(undefined, undefined, updated);
     setIsTujuanModalOpen(false);
     setEditingTujuanIdx(null);
     setTempTujuanTitle("");
@@ -221,10 +249,12 @@ export default function ProfilTab() {
 
   // Delete Tujuan
   const handleDeleteTujuan = (idx: number) => {
-    const updated = profileTujuan.filter((_, i) => i !== idx);
-    setProfileTujuan(updated);
-    localStorage.setItem("mgmp_profile_tujuan", JSON.stringify(updated));
-    syncProfileToSupabase(undefined, undefined, updated);
+    if (window.confirm("Apakah Anda yakin ingin menghapus sasaran/tujuan strategis ini?")) {
+      const updated = profileTujuan.filter((_, i) => i !== idx);
+      setProfileTujuan(updated);
+      localStorage.setItem("mgmp_profile_tujuan", JSON.stringify(updated));
+      syncProfileToFirestore(undefined, undefined, updated);
+    }
   };
 
   // Save / Add Board Member
@@ -251,7 +281,7 @@ export default function ProfilTab() {
 
     setStructureList(updated);
     localStorage.setItem("mgmp_profile_structure", JSON.stringify(updated));
-    syncProfileToSupabase(undefined, undefined, undefined, updated);
+    syncProfileToFirestore(undefined, undefined, undefined, updated);
     setIsStructureModalOpen(false);
     setEditingStructureIdx(null);
     setStructureName("");
@@ -267,7 +297,7 @@ export default function ProfilTab() {
     const updated = structureList.filter((_, i) => i !== idx);
     setStructureList(updated);
     localStorage.setItem("mgmp_profile_structure", JSON.stringify(updated));
-    syncProfileToSupabase(undefined, undefined, undefined, updated);
+    syncProfileToFirestore(undefined, undefined, undefined, updated);
   };
 
   return (

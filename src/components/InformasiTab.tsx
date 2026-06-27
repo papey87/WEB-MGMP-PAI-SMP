@@ -1,12 +1,15 @@
-import React, { useState } from "react";
-import { NewsItem } from "../types";
-import { useEventsData } from "../contexts/SupabaseContext";
-import {
-  Megaphone,
-  Clock,
-  ArrowRight,
-  Bell,
-  Search,
+import React, { useState, useEffect } from "react";
+import { NewsItem, MGMPEvent } from "../types";
+import { 
+  Megaphone, 
+  Clock, 
+  ArrowRight, 
+  Bell, 
+  Calendar, 
+  Search, 
+  Sparkles,
+  Award,
+  BookOpen
 } from "lucide-react";
 
 interface InformasiTabProps {
@@ -18,7 +21,19 @@ interface InformasiTabProps {
 export default function InformasiTab({ news, onSelectNews, onChangeTab }: InformasiTabProps) {
   const [searchQuery, setSearchQuery] = useState("");
   const [activeFilter, setActiveFilter] = useState<string>("Semua");
-  const { events: latestEvents } = useEventsData();
+  const [latestEvents, setLatestEvents] = useState<MGMPEvent[]>([]);
+
+  // Load events to reflect live "Pembaruan di agenda kegiatan"
+  useEffect(() => {
+    const saved = localStorage.getItem("mgmp_pai_events");
+    if (saved) {
+      try {
+        setLatestEvents(JSON.parse(saved));
+      } catch (e) {
+        // Fallback or empty
+      }
+    }
+  }, []);
 
   // Filter news items
   const filteredNews = news.filter((item) => {

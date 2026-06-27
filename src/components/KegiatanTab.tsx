@@ -1,12 +1,12 @@
 import React, { useState, useEffect } from "react";
-import { supabase } from "../lib/supabase";
+import { collection, onSnapshot, setDoc, doc, updateDoc, getDocs } from "firebase/firestore";
+import { db } from "../lib/firebase";
 import { MGMPEvent } from "../types";
-import { useEventsData } from "../contexts/SupabaseContext";
-import {
-  Calendar,
-  MapPin,
-  User,
-  Users,
+import { 
+  Calendar, 
+  MapPin, 
+  User, 
+  Users, 
   CheckCircle,
   Clock,
   Ticket,
@@ -90,7 +90,7 @@ const INITIAL_EVENTS: MGMPEvent[] = [
 ];
 
 export default function KegiatanTab() {
-  const { events } = useEventsData();
+  const [events, setEvents] = useState<MGMPEvent[]>([]);
   const [activeCategory, setActiveCategory] = useState<"Semua" | "Pentas PAI" | "Workshop" | "Agenda Lainnya">("Semua");
   const [selectedEventUrl, setSelectedEventUrl] = useState<MGMPEvent | null>(null);
 
@@ -126,6 +126,52 @@ export default function KegiatanTab() {
     ticketCode: string;
   } | null>(null);
 
+  useEffect(() => {
+    let isMounted = true;
+    let unsub: (() => void) | null = null;
+
+    const initEvents = async () => {
+      try {
+        const colRef = collection(db, "events");
+        const snapshot = await getDocs(colRef);
+        
+        if (!isMounted) return;
+
+        if (snapshot.empty) {
+          // Seed events in parallel
+          const seedPromises = INITIAL_EVENTS.map((ev) => 
+            setDoc(doc(db, "events", ev.id), ev)
+          );
+          await Promise.all(seedPromises);
+        }
+
+        if (!isMounted) return;
+
+        unsub = onSnapshot(colRef, (querySnap) => {
+          if (!isMounted) return;
+          const list: MGMPEvent[] = [];
+          querySnap.forEach((docSnap) => {
+            list.push({ id: docSnap.id, ...docSnap.data() } as any);
+          });
+          list.sort((a, b) => a.id.localeCompare(b.id));
+          setEvents(list);
+          localStorage.setItem("mgmp_pai_events", JSON.stringify(list));
+        }, (err) => {
+          console.error("Firestore listening error on events in KegiatanTab:", err);
+        });
+      } catch (err) {
+        console.error("Error initializing events database in KegiatanTab:", err);
+      }
+    };
+
+    initEvents();
+
+    return () => {
+      isMounted = false;
+      if (unsub) unsub();
+    };
+  }, []);
+
   const handleOpenRegister = (event: MGMPEvent) => {
     if (event.status === "Selesai") {
       showAlert("warning", "Kegiatan Selesai", "Acara ini telah selesai dilaksanakan. Silakan pilih agenda mendatang.");
@@ -139,7 +185,7 @@ export default function KegiatanTab() {
     setIsRegisterOpen(true);
   };
 
-  const submitRegister = async (e: React.FormEvent) => {
+  const submitRegister = (e: React.FormEvent) => {
     e.preventDefault();
     if (!inputName.trim() || !inputSchool.trim() || !inputWhatsapp.trim()) {
       showAlert("warning", "Data Belum Lengkap", "Mohon lengkapi formulir pendaftaran.");
@@ -148,20 +194,25 @@ export default function KegiatanTab() {
 
     if (!registerEvent) return;
 
-    const newCount = registerEvent.registeredCount + 1;
-    const newStatus = newCount >= registerEvent.quota ? "Penuh" : registerEvent.status;
+    // Increment registeredCount and update localStorage
+    const updatedEvents = events.map((ev) => {
+      if (ev.id === registerEvent.id) {
+        const newCount = ev.registeredCount + 1;
+        const newStatus = newCount >= ev.quota ? "Penuh" as const : ev.status;
+        
+        // Push update to Firestore
+        updateDoc(doc(db, "events", ev.id), {
+          registeredCount: newCount,
+          status: newStatus
+        }).catch((err) => console.error("Failed to sync event registration to Firestore:", err));
 
-    // Update event in Supabase
-    const { error } = await supabase
-      .from('events')
-      .update({ registered_count: newCount, status: newStatus })
-      .eq('id', registerEvent.id);
+        return { ...ev, registeredCount: newCount, status: newStatus };
+      }
+      return ev;
+    });
 
-    if (error) {
-      console.error("Failed to sync event registration to Supabase:", error);
-      showAlert("warning", "Gagal Mendaftar", "Terjadi kesalahan saat menyimpan pendaftaran. Silakan coba lagi.");
-      return;
-    }
+    setEvents(updatedEvents);
+    localStorage.setItem("mgmp_pai_events", JSON.stringify(updatedEvents));
 
     // Generate unique ticketing reference for authenticity
     const randomCode = "MGMP-PAI-" + Math.floor(100000 + Math.random() * 900000);
