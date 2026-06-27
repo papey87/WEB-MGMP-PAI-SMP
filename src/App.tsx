@@ -9,19 +9,19 @@ import AISobatGuruTab from "./components/AISobatGuruTab";
 import AdminTab from "./components/AdminTab";
 import ArtikelTab, { SEED_ARTICLES } from "./components/ArtikelTab";
 import LogoMGMP from "./components/LogoMGMP";
-import { collection, onSnapshot, query, orderBy, doc } from "firebase/firestore";
-import { db, auth } from "./lib/firebase";
+import { auth } from "./lib/firebase";
 import { onAuthStateChanged } from "firebase/auth";
-import { 
-  GraduationCap, 
-  BookOpen, 
-  Calendar, 
-  Users, 
-  Sparkles, 
-  Home, 
-  Menu, 
-  X, 
-  ArrowLeft, 
+import { useMGMP } from "./contexts/MGMPContext";
+import {
+  GraduationCap,
+  BookOpen,
+  Calendar,
+  Users,
+  Sparkles,
+  Home,
+  Menu,
+  X,
+  ArrowLeft,
   BookOpenCheck,
   Check,
   FileText,
@@ -30,7 +30,7 @@ import {
 } from "lucide-react";
 
 
-// Initial mock News data in Indonesian
+// Initial mock News data in Indonesian - used as fallback
 const INITIAL_NEWS: NewsItem[] = [
   {
     id: "news-1",
@@ -71,13 +71,16 @@ const INITIAL_NEWS: NewsItem[] = [
 ];
 
 export default function App() {
+  // Get real-time data from MGMPContext (Firestore synced across all devices/browsers)
+  const { news, articles, layoutConfig, layoutLoading } = useMGMP();
+
   const [activeTab, setActiveTab] = useState<string>("beranda");
   const [showAdminTab, setShowAdminTab] = useState<boolean>(() => {
     try {
       const params = new URLSearchParams(window.location.search);
-      const hasSecret = params.get("admin") === "subang-juara" || 
-                        params.get("akses") === "siladik-subang" || 
-                        params.get("secret") === "mgmp-subang-juara" || 
+      const hasSecret = params.get("admin") === "subang-juara" ||
+                        params.get("akses") === "siladik-subang" ||
+                        params.get("secret") === "mgmp-subang-juara" ||
                         params.get("kode") === "admin-mgmp-subang" ||
                         params.get("key") === "siladik-2026";
       if (hasSecret) {
@@ -101,50 +104,7 @@ export default function App() {
     return () => unsub();
   }, []);
 
-  const [layoutConfig, setLayoutConfig] = useState(() => {
-    try {
-      const saved = localStorage.getItem("custom_layout_config");
-      if (saved) return JSON.parse(saved);
-    } catch (e) {}
-    return {
-      tabs: [
-        { id: "beranda", label: "Beranda", visible: true },
-        { id: "profil", label: "Profil MGMP", visible: true },
-        { id: "informasi", label: "Informasi", visible: true },
-        { id: "kegiatan", label: "Agenda Kegiatan", visible: true },
-        { id: "perangkat", label: "Perangkat Ajar", visible: true },
-        { id: "artikel", label: "Artikel", visible: true },
-        { id: "ai-sobat", label: "Tanya AI Sobat Guru", visible: true }
-      ]
-    };
-  });
-
-  useEffect(() => {
-    const unsub = onSnapshot(doc(db, "settings", "layout"), (docSnap) => {
-      if (docSnap.exists()) {
-        const data = docSnap.data();
-        if (data.tabs) {
-          setLayoutConfig({ tabs: data.tabs });
-          try {
-            const saved = localStorage.getItem("custom_layout_config");
-            let merged = { tabs: data.tabs };
-            if (saved) {
-              const parsed = JSON.parse(saved);
-              merged = { ...parsed, tabs: data.tabs };
-            }
-            localStorage.setItem("custom_layout_config", JSON.stringify(merged));
-          } catch (e) {
-            console.error("Failed to merge layout config in App.tsx:", e);
-          }
-        }
-      }
-    }, (err) => {
-      console.warn("Layout listener failed in App.tsx:", err);
-    });
-    return () => unsub();
-  }, []);
-
-  // Validate active tab selection
+  // Validate active tab selection based on real-time layoutConfig from Firestore
   useEffect(() => {
     if (activeTab === "admin") return;
     const isTabAvailable = (layoutConfig.tabs || []).some((t: any) => t.id === activeTab && t.visible !== false);
@@ -158,48 +118,14 @@ export default function App() {
 
   const [selectedNews, setSelectedNews] = useState<NewsItem | null>(null);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const [newsList, setNewsList] = useState<NewsItem[]>(INITIAL_NEWS);
-  const [articlesList, setArticlesList] = useState<ArticleItem[]>(SEED_ARTICLES);
   const [selectedArticle, setSelectedArticle] = useState<ArticleItem | null>(null);
   const [isArtikelFormOpen, setIsArtikelFormOpen] = useState(false);
   const [artikelFormPreset, setArtikelFormPreset] = useState<{ title: string; content: string } | null>(null);
 
-  // Load news dynamically from Firestore, falling back to INITIAL_NEWS if empty
-  useEffect(() => {
-    const q = query(collection(db, "news"), orderBy("createdAt", "desc"));
-    const unsub = onSnapshot(q, (snap) => {
-      const list: NewsItem[] = [];
-      snap.forEach((doc) => {
-        list.push({ id: doc.id, ...doc.data() } as NewsItem);
-      });
-      if (list.length > 0) {
-        setNewsList(list);
-      }
-    }, (err) => {
-      console.warn("Failed to listen to news collection in App.tsx:", err);
-    });
-    return () => unsub();
-  }, []);
-
-  // Load articles dynamically from Firestore, falling back to SEED_ARTICLES if empty
-  useEffect(() => {
-    const q = query(collection(db, "articles"), orderBy("createdAt", "desc"));
-    const unsub = onSnapshot(q, (snap) => {
-      const list: ArticleItem[] = [];
-      snap.forEach((doc) => {
-        list.push({ id: doc.id, ...doc.data() } as ArticleItem);
-      });
-      if (list.length > 0) {
-        setArticlesList(list);
-      } else {
-        setArticlesList(SEED_ARTICLES);
-      }
-    }, (err) => {
-      console.warn("Failed to listen to articles collection in App.tsx:", err);
-      setArticlesList(SEED_ARTICLES);
-    });
-    return () => unsub();
-  }, []);
+  // Use news from context (real-time synced from Firestore across all devices)
+  // Fallback to INITIAL_NEWS if context is empty (avoids empty state during loading)
+  const newsList = news.length > 0 ? news : INITIAL_NEWS;
+  const articlesList = articles.length > 0 ? articles : SEED_ARTICLES;
 
   const tabIcons: Record<string, any> = {
     "beranda": Home,
@@ -232,7 +158,7 @@ export default function App() {
           {/* Row 1: Logo Brand & Mobile Toggle icon */}
           <div className="flex items-center justify-between py-1.5 sm:py-2">
             {/* Logo Brand Brand Area */}
-            <div 
+            <div
               onClick={() => {
                 setActiveTab("beranda");
                 setSelectedNews(null);
@@ -245,13 +171,13 @@ export default function App() {
             >
               <LogoMGMP size={62} className="md:size-[72px] group-hover:scale-105 transition-all duration-300 drop-shadow-sm" />
               <div className="select-none flex flex-col justify-center">
-                <h1 
+                <h1
                   className="font-extrabold tracking-tight leading-none group-hover:text-emerald-700 transition-colors"
                   style={{ fontSize: "30px", color: "#0e744c" }}
                 >
                   MGMP PAI SMP
                 </h1>
-                <p 
+                <p
                   className="font-bold tracking-tight mt-1 leading-snug"
                   style={{ fontSize: "15px", fontFamily: "system-ui", color: "#000000" }}
                 >
@@ -262,7 +188,7 @@ export default function App() {
                     Tingkat Sekolah Menengah Pertama
                   </span>
                   <span className="hidden sm:inline text-slate-300">•</span>
-                  <span 
+                  <span
                     className="text-emerald-700 font-extrabold tracking-wide uppercase bg-emerald-50 px-2 py-0.5 rounded border border-emerald-100/60 w-max"
                     style={{ fontSize: "12px" }}
                   >
@@ -301,8 +227,8 @@ export default function App() {
                     setIsArtikelFormOpen(false);
                   }}
                   className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                    isSelected 
-                      ? "bg-emerald-50 text-emerald-800 border border-emerald-100/30" 
+                    isSelected
+                      ? "bg-emerald-50 text-emerald-800 border border-emerald-100/30"
                       : "text-slate-500 hover:text-slate-800 hover:bg-slate-50"
                   }`}
                 >
@@ -329,8 +255,8 @@ export default function App() {
                     setIsArtikelFormOpen(false);
                   }}
                   className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold text-left transition-all ${
-                    isSelected 
-                      ? "bg-emerald-50 text-emerald-800" 
+                    isSelected
+                      ? "bg-emerald-50 text-emerald-800"
                       : "text-slate-600 hover:text-slate-800 hover:bg-slate-50"
                   }`}
                 >
@@ -371,9 +297,9 @@ export default function App() {
 
             {/* Main Picture illustration card */}
             <div className="rounded-3xl overflow-hidden h-64 md:h-96 bg-slate-100 shadow border border-slate-100">
-              <img 
-                src={selectedNews.image} 
-                alt={selectedNews.title} 
+              <img
+                src={selectedNews.image}
+                alt={selectedNews.title}
                 className="w-full h-full object-cover"
                 referrerPolicy="no-referrer"
               />
@@ -393,8 +319,8 @@ export default function App() {
           /* Standard Navigation Tabs Switcher view logic */
           <div>
             {activeTab === "beranda" && (
-              <BerandaTab 
-                news={newsList} 
+              <BerandaTab
+                news={newsList}
                 onSelectNews={(item) => setSelectedNews(item)}
                 onChangeTab={(tabId) => {
                   setActiveTab(tabId);
@@ -417,8 +343,8 @@ export default function App() {
             )}
             {activeTab === "profil" && <ProfilTab />}
             {activeTab === "informasi" && (
-              <InformasiTab 
-                news={newsList} 
+              <InformasiTab
+                news={newsList}
                 onSelectNews={(item) => setSelectedNews(item)}
                 onChangeTab={(tabId) => setActiveTab(tabId)}
               />
@@ -426,7 +352,7 @@ export default function App() {
             {activeTab === "kegiatan" && <KegiatanTab />}
             {activeTab === "perangkat" && <PerangkatAjarTab />}
             {activeTab === "artikel" && (
-              <ArtikelTab 
+              <ArtikelTab
                 selectedArticle={selectedArticle}
                 setSelectedArticle={setSelectedArticle}
                 initialFormOpen={isArtikelFormOpen}
@@ -435,7 +361,7 @@ export default function App() {
               />
             )}
             {activeTab === "ai-sobat" && (
-              <AISobatGuruTab 
+              <AISobatGuruTab
                 onShareToArticles={(title, content) => {
                   setArtikelFormPreset({ title, content });
                   setIsArtikelFormOpen(true);
@@ -445,12 +371,12 @@ export default function App() {
               />
             )}
             {activeTab === "admin" && (
-              <AdminTab 
+              <AdminTab
                 onLogout={() => {
                   setShowAdminTab(false);
                   setActiveTab("beranda");
                   window.scrollTo({ top: 0, behavior: "smooth" });
-                }} 
+                }}
               />
             )}
           </div>
@@ -461,10 +387,10 @@ export default function App() {
       <footer id="main-footer" className="bg-slate-900 text-slate-300 border-t border-emerald-950/20">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 md:py-10">
           <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
-            
+
             {/* Footer column 1: Organization brand about */}
             <div className="space-y-4 md:col-span-2">
-              <div 
+              <div
                 onClick={() => {
                   setActiveTab("beranda");
                   setSelectedNews(null);
@@ -481,7 +407,7 @@ export default function App() {
                 </h3>
               </div>
               <p className="text-xs text-slate-400 leading-relaxed max-w-sm">
-                Musyawarah Guru Mata Pelajaran Pendidikan Agama Islam Sekolah Menengah Pertama Kabupaten Subang. 
+                Musyawarah Guru Mata Pelajaran Pendidikan Agama Islam Sekolah Menengah Pertama Kabupaten Subang.
                 Forum silaturahim GPAI Kabupaten untuk merawat akidah mutawashith (moderat) bermanhaj rahmatan lil 'alamin.
               </p>
               <p className="text-xs text-slate-500 font-medium">
