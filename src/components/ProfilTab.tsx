@@ -121,7 +121,7 @@ export default function ProfilTab() {
     };
   }, []);
 
-  // Firebase Real-time Synchronization for Profile
+// Firebase Real-time Synchronization for Profile
   useEffect(() => {
     let isMounted = true;
     const docRef = doc(db, "settings", "profile");
@@ -160,6 +160,7 @@ export default function ProfilTab() {
         setLoading(false);
       }
     });
+
     return () => {
       isMounted = false;
       unsub();

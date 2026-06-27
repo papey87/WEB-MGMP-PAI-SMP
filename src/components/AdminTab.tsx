@@ -426,6 +426,25 @@ export default function AdminTab({ onLogout }: AdminTabProps = {}) {
     updatedTujuan?: any[],
     updatedStructure?: any[]
   ) => {
+    // 1. Update local storage first as a fallback/mirror
+    if (updatedVisi !== undefined) {
+      localStorage.setItem("mgmp_profile_visi", updatedVisi);
+      setAdminVisi(updatedVisi);
+    }
+    if (updatedMisi !== undefined) {
+      localStorage.setItem("mgmp_profile_misi", JSON.stringify(updatedMisi));
+      setAdminMisi(updatedMisi);
+    }
+    if (updatedTujuan !== undefined) {
+      localStorage.setItem("mgmp_profile_tujuan", JSON.stringify(updatedTujuan));
+      setAdminTujuan(updatedTujuan);
+    }
+    if (updatedStructure !== undefined) {
+      localStorage.setItem("mgmp_profile_structure", JSON.stringify(updatedStructure));
+      setAdminStructure(updatedStructure);
+    }
+
+    // 2. Save to Firebase as usual
     try {
       const docRef = doc(db, "settings", "profile");
       const payload: any = {};
@@ -433,12 +452,6 @@ export default function AdminTab({ onLogout }: AdminTabProps = {}) {
       if (updatedMisi !== undefined) payload.misi = updatedMisi;
       if (updatedTujuan !== undefined) payload.tujuan = updatedTujuan;
       if (updatedStructure !== undefined) payload.structure = updatedStructure;
-
-      // Update local storage too as a fallback/mirror
-      if (updatedVisi !== undefined) localStorage.setItem("mgmp_profile_visi", updatedVisi);
-      if (updatedMisi !== undefined) localStorage.setItem("mgmp_profile_misi", JSON.stringify(updatedMisi));
-      if (updatedTujuan !== undefined) localStorage.setItem("mgmp_profile_tujuan", JSON.stringify(updatedTujuan));
-      if (updatedStructure !== undefined) localStorage.setItem("mgmp_profile_structure", JSON.stringify(updatedStructure));
 
       await setDoc(docRef, payload, { merge: true });
     } catch (e) {
